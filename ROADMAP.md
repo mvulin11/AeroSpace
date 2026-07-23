@@ -186,6 +186,30 @@ committing to a design. This is the highest-value *performance* fix and the risk
 
 **Upstream PR candidate: YES if it works** — it's their most-wanted class of fix.
 
+## Visual polish — round one (2026-07-23, deployed in v0.21.3-fork.3)
+
+- [x] JankyBorders: focused-window highlight (round, 6px, macOS blue 0xff007aff,
+      inactive invisible). Brew tap refused to build (demands Xcode 27), so it's
+      built from source at `~/dev/JankyBorders` (plain `make`), binary at
+      `/opt/homebrew/bin/borders`, config `~/.config/borders/bordersrc`, run by
+      LaunchAgent `~/Library/LaunchAgents/com.matthewvulin.borders.plist`
+      (RunAtLoad + KeepAlive). Update: git pull + make + cp +
+      `launchctl kickstart -k gui/$UID/com.matthewvulin.borders`.
+- [x] Gaps: inner/outer 8px in the shared config (flows to the mini too — no borders
+      there yet; build JankyBorders on the mini if wanted).
+- [x] Branch `feat/center-non-resizable` — `center-non-resizable-windows` (default on):
+      windows that CLAMP setAxFrame's size get re-positioned centered in their tile.
+      v1 used an AXIsAttributeSettable probe and FAILED live: System Settings is
+      vertically resizable (size settable) but clamps width — AX has no per-axis
+      resizability. v2 observes clamping via one size readback after layout, cached
+      per window (conforming windows pay one readback ever). LIVE-VALIDATED: System
+      Settings at exact tile center x=502 = 8+(1712-723)/2.
+- Later rounds: SketchyBar workspace indicator driven by fork events (window-closed
+  makes per-workspace app icons accurate); empty-workspace window routing; #386
+  cursor-fling skip; resize mode bindings.
+- PROCESS NOTE: the build recipe ends with `git checkout .` — it discards ANY
+  uncommitted edits, not just generated files. Commit everything before building.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
