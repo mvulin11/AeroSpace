@@ -46,6 +46,8 @@ struct Config: ConvenienceMutable {
     var automaticallyUnhideMacosHiddenApps: Bool = false
     var accordionPadding: Int = 30
     var enableNormalizationOppositeOrientationForNestedContainers: Bool = true
+    // Fork feature: center non-resizable windows (System Settings, Calculator, ...) in their tile
+    var centerNonResizableWindows: Bool = true
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()

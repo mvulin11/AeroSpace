@@ -190,6 +190,15 @@ final class MacWindow: Window {
         try await macApp.getAxSize(windowId, cm)
     }
 
+    private var axSizeClampObserved: Bool?
+    override func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? {
+        if axSizeClampObserved == false { return nil }
+        guard let actual = try await macApp.getAxSize(windowId, cm) else { return nil }
+        let clamps = abs(actual.width - target.width) > 1 || abs(actual.height - target.height) > 1
+        if axSizeClampObserved == nil { axSizeClampObserved = clamps }
+        return clamps ? actual : nil
+    }
+
     override func setAxFrame(_ topLeft: CGPoint?, _ size: CGSize?) {
         macApp.setAxFrame(windowId, topLeft, size)
     }

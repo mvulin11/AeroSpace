@@ -31,6 +31,12 @@ open class Window: TreeNode, Hashable {
     }
 
     func getAxSize(_ cm: CancellationMode) async throws -> CGSize? { die("Not implemented") }
+    // Non-resizable (or partially resizable, e.g. fixed-width System Settings) windows
+    // clamp the size part of setAxFrame. AX doesn't expose per-axis resizability, so
+    // clamping is observed: returns the actual size when the window clamps, nil when it
+    // conforms to the requested size. Implementations cache the classification after the
+    // first observation, so conforming windows pay for one readback in their lifetime
+    func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? { nil }
     func getTitle(_ cm: CancellationMode) async throws -> String { die("Not implemented") }
     func isMacosFullscreen(_ cm: CancellationMode) async throws -> Bool { false }
     func isMacosMinimized(_ cm: CancellationMode) async throws -> Bool { false } // todo replace with enum MacOsWindowNativeState { normal, fullscreen, invisible }
