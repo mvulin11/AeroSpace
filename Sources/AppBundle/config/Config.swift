@@ -48,6 +48,8 @@ struct Config: ConvenienceMutable {
     var enableNormalizationOppositeOrientationForNestedContainers: Bool = true
     // Fork feature: deterministic count-based layouts (2=side-by-side, 3=primary+stack, 4=2x2)
     var enableCountBasedLayouts: Bool = false
+    // Fork feature: center non-resizable windows (System Settings, Calculator, ...) in their tile
+    var centerNonResizableWindows: Bool = true
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()

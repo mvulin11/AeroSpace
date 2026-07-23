@@ -38,6 +38,22 @@ extension TreeNode {
                         lastAppliedLayoutPhysicalRect = physicalRect
                         window.isFullscreen = false
                         window.setAxFrame(point, CGSize(width: width, height: height))
+                        // Windows that clamp setAxFrame's size (System Settings' fixed width,
+                        // Calculator, ...) would stick to the tile's top-left corner with dead
+                        // space around them. Center them in their tile instead. Clamping is
+                        // observed via one size readback and cached per window, so conforming
+                        // windows don't pay for extra AX calls after their first layout.
+                        if config.centerNonResizableWindows,
+                           let actualSize = try await window.getAxSizeIfClamping(target: CGSize(width: width, height: height), .cancellable)
+                        {
+                            window.setAxFrame(
+                                CGPoint(
+                                    x: point.x + max(0, (width - actualSize.width) / 2),
+                                    y: point.y + max(0, (height - actualSize.height) / 2),
+                                ),
+                                nil,
+                            )
+                        }
                     }
                 }
             case .tilingContainer(let container):
