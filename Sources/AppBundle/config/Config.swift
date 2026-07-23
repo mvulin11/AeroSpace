@@ -46,6 +46,8 @@ struct Config: ConvenienceMutable {
     var automaticallyUnhideMacosHiddenApps: Bool = false
     var accordionPadding: Int = 30
     var enableNormalizationOppositeOrientationForNestedContainers: Bool = true
+    // Fork feature: deterministic count-based layouts (2=side-by-side, 3=primary+stack, 4=2x2)
+    var enableCountBasedLayouts: Bool = false
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()

@@ -4,6 +4,9 @@ extension Workspace {
         if config.enableNormalizationOppositeOrientationForNestedContainers {
             rootTilingContainer.normalizeOppositeOrientationForNestedContainers()
         }
+        if config.enableCountBasedLayouts {
+            normalizeCountBasedLayout()
+        }
     }
 }
 
