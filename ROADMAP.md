@@ -25,17 +25,29 @@ Homebrew AeroSpace stays the daily driver until a fix is validated on the debug 
 - [x] Create GitHub fork (`mvulin11/AeroSpace`), add as `origin`, keep upstream remote as `upstream`
 - [ ] Self-signed codesign certificate (needed only to run the fork as AeroSpace.app;
       see `dev-docs/development.md` §2)
-- [ ] Figure out debug-vs-release socket coexistence so the fork can be tested
-      without killing the daily-driver Homebrew install
+- [x] Debug-vs-release coexistence — SOLVED UPSTREAM by design: debug builds use app id
+      `bobko.aerospace.debug` with their own socket, and on startup send `enable off` to
+      the release server (re-enable on quit). Swap procedure that works:
+      `.debug/AeroSpaceApp --config-path ~/dev/aerospace/test-config.toml` (test config =
+      real config minus after-startup-command/start-at-login, plus fork options).
+      GOTCHA: only SIGINT is intercepted for the re-enable — after SIGTERM you must run
+      `aerospace enable on` manually (candidate fork fix: intercept SIGTERM too).
+      The release server keeps its in-memory workspace assignments while disabled, so
+      windows return to their workspaces after swap-back; the layout daemon survives too.
 
 ## Phase 1 — `window-closed` event (~30 lines, do first)
 
-- [~] Branch: `feat/window-closed-event` — implemented 2026-07-23, 382 tests pass;
-      pending live validation against the debug server (needs socket coexistence, Phase 0).
+- [x] Branch: `feat/window-closed-event` — implemented and LIVE-VALIDATED 2026-07-23.
+      Verified on the debug server: `close --window-id` emits the event with full payload
+      (windowId/workspace/appBundleId/appName); SIGKILL of an app (TextEdit) emitted
+      window-closed for each of its windows within ~3s via the dead-app GC path; real-world
+      popup churn (Gemini/UserNotificationCenter transients) produced balanced
+      detected/closed pairs.
       Design note: screen lock GCs all windows into the closed-windows cache and now emits
       window-closed for each; cache *restore* now broadcasts a matching window-detected
       (upstream deliberately skips on-window-detected callbacks on restore; the event
       broadcast keeps subscriber bookkeeping balanced across lock/unlock).
+      Next: PR upstream.
 
 **Problem**: no window-closed callback (upstream #445 — AX destroy notifications are
 unreliable). The entire `layout-daemon.sh` close-detection path infers closes from
@@ -56,14 +68,21 @@ including app quits and dead-PID cleanup. No event for windows moved between wor
 
 ## Phase 2 — Native count-based layouts (the big win)
 
-- [~] Branch: `feat/count-based-layouts` — implemented 2026-07-23 as
+- [x] Branch: `feat/count-based-layouts` — implemented and LIVE-VALIDATED 2026-07-23 as
       `enable-count-based-layouts` config option; runs as the last step of
       normalizeContainers on the settled tree. 8 unit tests
       (CountBasedLayoutTest) cover all shapes, idempotency/weight preservation,
       floating exclusion, 5+ untouched, and the option being off by default.
-      Pending live validation. The 3-window shape accepts the stack on either
-      side (matches the script's permissive signature check) so `move`
+      Live: 4 windows showed the 2x2 signature (all parents v_tiles), closing one
+      instantly reshaped to primary+stack (1 h_tiles + 2 v_tiles parents), and the
+      14-window workspace stayed untouched. The 3-window shape accepts the stack on
+      either side (matches the script's permissive signature check) so `move`
       commands aren't snapped back.
+      Known nuance: in the heavy refresh session normalization runs BEFORE window GC,
+      so a kill-path close reshapes on the NEXT refresh event, not the same one
+      (close-command path reshapes immediately). In practice event churn makes this
+      invisible; if it ever matters, add a normalize pass after GC in refresh().
+      Next: flip the flag in the real config at deploy time (Phase D).
 
 **Problem**: `enforce-three-pane.sh` rebuilds the focused workspace by tiling-window count
 from *outside* the server: flatten + `join-with` on a possibly half-settled tree, then a
