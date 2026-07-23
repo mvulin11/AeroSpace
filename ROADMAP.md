@@ -23,8 +23,22 @@ Homebrew AeroSpace stays the daily driver until a fix is validated on the debug 
   - Requires Homebrew bash 5 (installed 2026-07-23). System bash 3.2 fails with a
     misleading error that `| tail` masks — always check the exit code.
 - [x] Create GitHub fork (`mvulin11/AeroSpace`), add as `origin`, keep upstream remote as `upstream`
-- [ ] Self-signed codesign certificate (needed only to run the fork as AeroSpace.app;
-      see `dev-docs/development.md` §2)
+- [x] Self-signed codesign certificate `aerospace-codesign-certificate` — created via
+      CLI 2026-07-23 (openssl + `security import` with legacy PKCS12 algos +
+      `security add-trusted-cert -p codeSign`; key material was in the session
+      scratchpad and is disposable — losing it just means re-creating the cert and
+      re-granting Accessibility once)
+- [x] DEPLOYED 2026-07-23: fork v0.21.3-fork.1 is the daily driver.
+      Homebrew cask uninstalled; app at /Applications/AeroSpace.app, CLI at
+      /opt/homebrew/bin/aerospace. Upstream PR for Phase 1:
+      https://github.com/nikitabobko/AeroSpace/pull/2199
+      Build recipe (full build-release.sh needs Ruby 3.x for man pages — skipped):
+        ./generate.sh --build-version 0.21.3-fork.N --codesign-identity aerospace-codesign-certificate --generate-git-hash
+        swift build -c release --arch arm64 --product aerospace
+        (cd xcode && xcodebuild clean build -scheme AeroSpace -destination "generic/platform=macOS" -configuration Release -derivedDataPath .xcode-build)
+        codesign -f -s aerospace-codesign-certificate .build/release/aerospace
+        git checkout .   # reset generated files
+      KEEP the '-fork' version suffix: layout-daemon.sh's fork-mode probe greps for it.
 - [x] Debug-vs-release coexistence — SOLVED UPSTREAM by design: debug builds use app id
       `bobko.aerospace.debug` with their own socket, and on startup send `enable off` to
       the release server (re-enable on quit). Swap procedure that works:
@@ -183,6 +197,20 @@ committing to a design. This is the highest-value *performance* fix and the risk
       tiled one. Watch.
 - [ ] Track upstream releases (currently on Homebrew 0.21.1-Beta; upstream at 0.21.3-Beta)
       and rebase fork branches after each.
+
+## Deployed state (2026-07-23)
+
+- MacBook: fork v0.21.3-fork.1 live; `enable-count-based-layouts = true` in config;
+  layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
+  window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
+  manual resizes now survive; cmd-ctrl-b re-evens on demand).
+- Mac mini: stock Homebrew 0.21.1-Beta; synced daemon auto-detected legacy mode
+  (verified: subscribes focus-changed + enforce flow). Mini config generated with
+  fork-only lines stripped.
+- enforce-three-pane.sh: no longer invoked by the MacBook daemon but MUST stay in the
+  repo — the mini still uses it and the sync scp's it by name; cmd-ctrl-shift-r also
+  still points at it (harmless double-enforce on the fork).
+- prune-ghost-windows.sh: still active on both machines until Phase 3.
 
 ## Lockstep warnings (do NOT skip when deleting scripts)
 
