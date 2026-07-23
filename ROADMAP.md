@@ -98,6 +98,21 @@ validate the app PID is alive; remove and GC windows of dead apps. Also covers t
 title-less YouTube-PWA ghost case if it turns out to be dead-PID; if not, keep that one
 narrow rule in the script until root-caused.
 
+**Investigation (2026-07-23, code-read only — needs runtime confirmation)**: upstream
+DOES already GC dead apps (`refreshAllAndGetAliveWindowIds` sweeps `nsApp.isTerminated`
+-> `app.destroy()`), and refresh() GCs windows absent from aliveWindowIds. Two candidate
+gaps explain surviving ghosts:
+1. `destroy()` (MacApp.swift) removes the app from allAppsMap and stops its AX thread
+   but does NOT GC its MacWindows — that's deferred to the refresh loop's alive-check,
+   and the whole refresh session is CANCELLABLE (`scheduleCancellableCompleteRefreshSession`
+   cancels the in-flight task on every new event). Event storms or a #1615 stall can
+   starve the GC pass indefinitely.
+2. `NSRunningApplication.isTerminated` can be stale for hard-crashed processes, while a
+   `kill(pid, 0) == ESRCH` check (equivalent to the prune script's `ps` sweep) is truth.
+Fix sketch: GC the app's windows inside destroy() itself (which also makes Phase 1's
+window-closed event fire for them), plus a cheap kill(pid,0) liveness check in the
+dead-app sweep. Confirm with DAEMON_LOG evidence or a repro before coding.
+
 **Acceptance**: kill -9 an app → its windows vanish from the tree within one refresh,
 `window-closed` events fire (Phase 1), no `flatten-workspace-tree` cleanup needed.
 
