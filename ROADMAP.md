@@ -227,7 +227,28 @@ committing to a design. This is the highest-value *performance* fix and the risk
 
 ## Phase 6 — Persist workspace assignments across restarts (high value)
 
-- [ ] Branch: `feat/persist-workspace-assignments`
+- [~] Branch: `feat/persist-workspace-assignments` — implemented + unit-tested
+      2026-07-24; NEEDS LIVE VALIDATION on the debug build (restart cycle).
+      Design: reuses the lock-screen FrozenWorld machinery instead of a parallel
+      windowId→workspace map. Write side: after every successful refresh session a
+      debounced (500ms) snapshot of the full frozen world (tree shape + weights +
+      floating + visible workspaces) is JSON-dumped to
+      `~/Library/Application Support/AeroSpace/workspace-state-<appId>.json`
+      (appId suffix keeps debug/release servers from clobbering each other; write
+      skipped when bytes unchanged; sync flush in beforeTermination). Restore side:
+      at startup the file is seeded into closedWindowsCache, so the EXISTING
+      restoreClosedWindowsCacheIfNeeded path rebinds each window as it's detected —
+      partial detection, orphan force-tiling, and monitor visible-workspace restore
+      all come for free, and layout-changing commands invalidate the seed the same
+      way they invalidate the lock-screen cache. kern.boottime is stamped in the
+      file and checked with ±120s tolerance (CGWindowIDs recycle across reboots).
+      Config knob `persist-workspace-assignments`, default ON.
+      Known behavior notes: (1) restored windows skip on-window-detected callbacks
+      (same as lock-unlock; the frozen tree already encodes float/workspace so
+      routing rules are redundant for them) and broadcast window-detected instead;
+      (2) macOS-minimized windows aren't in the frozen world (global container,
+      same gap as upstream's lock cache); (3) SIGTERM isn't intercepted (Phase 0
+      gotcha), so a SIGTERM kill relies on the 500ms debounced write, not the flush.
 
 **Problem (root-caused 2026-07-24)**: upstream has NO workspace persistence (grep:
 only a UI pref uses UserDefaults). On startup every window binds to its monitor's

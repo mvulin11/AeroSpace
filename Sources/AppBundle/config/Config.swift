@@ -50,6 +50,8 @@ struct Config: ConvenienceMutable {
     var enableCountBasedLayouts: Bool = false
     // Fork feature: center non-resizable windows (System Settings, Calculator, ...) in their tile
     var centerNonResizableWindows: Bool = true
+    // Fork feature: restore windowId -> workspace assignments after a server restart (state file survives WM restarts, not reboots)
+    var persistWorkspaceAssignments: Bool = true
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()

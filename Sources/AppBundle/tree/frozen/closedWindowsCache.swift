@@ -17,6 +17,11 @@ struct FrozenMonitor: Sendable {
         topLeftCorner = monitor.rect.topLeftCorner
         visibleWorkspace = monitor.activeWorkspace.name
     }
+
+    init(topLeftCorner: CGPoint, visibleWorkspace: String) {
+        self.topLeftCorner = topLeftCorner
+        self.visibleWorkspace = visibleWorkspace
+    }
 }
 
 struct FrozenWorkspace: Sendable {
@@ -34,6 +39,20 @@ struct FrozenWorkspace: Sendable {
         macosUnconventionalWindows =
             workspace.macOsNativeHiddenAppsWindowsContainer.children.map { FrozenWindow($0 as! Window) } +
             workspace.macOsNativeFullscreenWindowsContainer.children.map { FrozenWindow($0 as! Window) }
+    }
+
+    init(
+        name: String,
+        monitor: FrozenMonitor,
+        rootTilingNode: FrozenContainer,
+        floatingWindows: [FrozenWindow],
+        macosUnconventionalWindows: [FrozenWindow],
+    ) {
+        self.name = name
+        self.monitor = monitor
+        self.rootTilingNode = rootTilingNode
+        self.floatingWindows = floatingWindows
+        self.macosUnconventionalWindows = macosUnconventionalWindows
     }
 }
 
@@ -123,4 +142,10 @@ private func restoreTreeRecursive(frozenContainer: FrozenContainer, parent: NonL
 // and with mouse manipulations
 @MainActor func resetClosedWindowsCache() {
     closedWindowsCache = FrozenWorld(workspaces: [], monitors: [], windowIds: [])
+}
+
+/// Startup seeding for persist-workspace-assignments (fork feature): the persisted world
+/// restores through the same restoreClosedWindowsCacheIfNeeded path as lock-screen recovery
+@MainActor func seedClosedWindowsCache(_ world: FrozenWorld) {
+    closedWindowsCache = world
 }

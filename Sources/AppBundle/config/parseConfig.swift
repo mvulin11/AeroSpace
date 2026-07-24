@@ -140,6 +140,7 @@ private let configParser: [String: any ParserProtocol<Config>] = [
     "enable-normalization-opposite-orientation-for-nested-containers": Parser(\.enableNormalizationOppositeOrientationForNestedContainers, parseBool),
     "enable-count-based-layouts": Parser(\.enableCountBasedLayouts, parseBool),
     "center-non-resizable-windows": Parser(\.centerNonResizableWindows, parseBool),
+    "persist-workspace-assignments": Parser(\.persistWorkspaceAssignments, parseBool),
 
     "default-root-container-layout": Parser(\.defaultRootContainerLayout, parseLayout),
     "default-root-container-orientation": Parser(\.defaultRootContainerOrientation, parseDefaultContainerOrientation),
