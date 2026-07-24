@@ -101,6 +101,11 @@ struct FrozenWorkspace: Sendable {
             .singleOrNil()?
             .setActiveWorkspace(Workspace.get(byName: monitor.visibleWorkspace))
     }
+    // Startup binds focus to the first workspace before persisted state is restored;
+    // re-focus the persisted one. Post-startup (lock-unlock) focus is left alone
+    if isStartup, let name = persistedStartupFocusedWorkspace {
+        _ = Workspace.get(byName: name).focusWorkspace()
+    }
     return true
 }
 

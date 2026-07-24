@@ -25,6 +25,8 @@ struct PersistedWorld: Codable {
     let bootTime: Int
     let workspaces: [PersistedWorkspace]
     let monitors: [PersistedMonitor]
+    /// Optional so files written by older fork builds still decode
+    let focusedWorkspace: String?
 }
 
 struct PersistedMonitor: Codable {
@@ -61,10 +63,11 @@ enum PersistedTreeNode: Codable {
 // MARK: - FrozenWorld -> PersistedWorld
 
 extension PersistedWorld {
-    init(_ world: FrozenWorld, bootTime: Int) {
+    init(_ world: FrozenWorld, bootTime: Int, focusedWorkspace: String?) {
         self.bootTime = bootTime
         self.workspaces = world.workspaces.map(PersistedWorkspace.init)
         self.monitors = world.monitors.map(PersistedMonitor.init)
+        self.focusedWorkspace = focusedWorkspace
     }
 }
 
@@ -203,7 +206,7 @@ var workspaceStateFileUrl: URL {
 func getBootTime() -> Int? {
     var bootTimeval = timeval()
     var size = MemoryLayout<timeval>.size
-    return sysctlbyname("kern.boottime", &bootTimeval, &size, nil, 0) == 0 ? Int(bootTimeval.tv_sec) : nil
+    return unsafe sysctlbyname("kern.boottime", &bootTimeval, &size, nil, 0) == 0 ? Int(bootTimeval.tv_sec) : nil
 }
 
 // kern.boottime is derived from wall clock minus uptime, so NTP adjustments can shift
@@ -235,7 +238,7 @@ private let bootTimeToleranceSeconds = 120
     encoder.outputFormatting = .sortedKeys // deterministic bytes for the unchanged-skip below
     let data: Data
     do {
-        data = try encoder.encode(PersistedWorld(world, bootTime: bootTime))
+        data = try encoder.encode(PersistedWorld(world, bootTime: bootTime, focusedWorkspace: focus.workspace.name))
     } catch {
         FileHandle.standardError.write("Failed to encode workspace state: \(error)\n".data(using: .utf8)!)
         return
@@ -268,5 +271,10 @@ private let bootTimeToleranceSeconds = 120
         FileHandle.standardError.write("Ignoring workspace state at \(url.path): unknown layout/orientation\n".data(using: .utf8)!)
         return
     }
+    persistedStartupFocusedWorkspace = persisted.focusedWorkspace
     seedClosedWindowsCache(world)
 }
+
+/// The workspace to re-focus while startup restore runs. Left set after startup —
+/// harmless, since the restore path only consults it while isStartup is true
+@MainActor var persistedStartupFocusedWorkspace: String? = nil
