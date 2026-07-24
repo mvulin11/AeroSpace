@@ -37,6 +37,10 @@ open class Window: TreeNode, Hashable {
     // conforms to the requested size. Implementations cache the classification after the
     // first observation, so conforming windows pay for one readback in their lifetime
     func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? { nil }
+    // Last observed clamped size of a known-clamping window, nil for conforming/unknown.
+    // Lets the layout place clamping windows at their centered position directly instead
+    // of positioning at the tile's top-left first and re-centering after the readback
+    var knownClampedAxSize: CGSize? { nil }
     func getTitle(_ cm: CancellationMode) async throws -> String { die("Not implemented") }
     func isMacosFullscreen(_ cm: CancellationMode) async throws -> Bool { false }
     func isMacosMinimized(_ cm: CancellationMode) async throws -> Bool { false } // todo replace with enum MacOsWindowNativeState { normal, fullscreen, invisible }

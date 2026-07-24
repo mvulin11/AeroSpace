@@ -37,22 +37,34 @@ extension TreeNode {
                     } else {
                         lastAppliedLayoutPhysicalRect = physicalRect
                         window.isFullscreen = false
-                        window.setAxFrame(point, CGSize(width: width, height: height))
+                        let target = CGSize(width: width, height: height)
                         // Windows that clamp setAxFrame's size (System Settings' fixed width,
                         // Calculator, ...) would stick to the tile's top-left corner with dead
                         // space around them. Center them in their tile instead. Clamping is
                         // observed via one size readback and cached per window, so conforming
                         // windows don't pay for extra AX calls after their first layout.
-                        if config.centerNonResizableWindows,
-                           let actualSize = try await window.getAxSizeIfClamping(target: CGSize(width: width, height: height), .cancellable)
-                        {
-                            window.setAxFrame(
-                                CGPoint(
-                                    x: point.x + max(0, (width - actualSize.width) / 2),
-                                    y: point.y + max(0, (height - actualSize.height) / 2),
-                                ),
-                                nil,
+                        // Known-clamping windows are placed at the centered position DIRECTLY:
+                        // positioning at the tile's top-left first and re-centering after the
+                        // readback made them visibly hop left and back on every layout pass.
+                        func centered(_ clampedSize: CGSize) -> CGPoint {
+                            CGPoint(
+                                x: point.x + max(0, (width - clampedSize.width) / 2),
+                                y: point.y + max(0, (height - clampedSize.height) / 2),
                             )
+                        }
+                        let requestedPoint = config.centerNonResizableWindows
+                            ? window.knownClampedAxSize.map(centered) ?? point
+                            : point
+                        window.setAxFrame(requestedPoint, target)
+                        if config.centerNonResizableWindows,
+                           let actualSize = try await window.getAxSizeIfClamping(target: target, .cancellable)
+                        {
+                            let newPoint = centered(actualSize)
+                            // Re-position only when the observed size moved the centering target;
+                            // re-setting an identical frame every pass is pointless AX churn
+                            if abs(newPoint.x - requestedPoint.x) > 1 || abs(newPoint.y - requestedPoint.y) > 1 {
+                                window.setAxFrame(newPoint, nil)
+                            }
                         }
                     }
                 }
