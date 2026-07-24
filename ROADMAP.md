@@ -378,9 +378,9 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       placement (memory TTL) for apps whose background tabs leave the AX list;
       apps whose tabs persist in AX restore exactly via the shelf path.
 
-## Close/minimize reflow latency (user-reported 2026-07-24, awaiting live validation)
+## Close/minimize reflow latency (user-reported 2026-07-24, LIVE-VALIDATED, not yet deployed)
 
-- [~] Branch: `perf/reflow-latency` — "closing or minimizing an app takes a couple
+- [x] Branch: `perf/reflow-latency` — "closing or minimizing an app takes a couple
       seconds before the rest of the windows adjust".
       MEASURED with a 200Hz CGWindowList probe (`optionOnScreenOnly`, ground truth of
       what reaches the screen, independent of AeroSpace's own reporting):
@@ -412,13 +412,24 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       detection in <=1.5s instead of being denied it for 5s.
       2 unit tests (ConfigTest): key parsing, and the sync semantics incl. 0 = fall back
       to the app deadline and stock mode disabling both.
-      409 tests green. NOT yet live-validated, NOT deployed — daily driver still fork.10.
-      VALIDATE BEFORE DEPLOY: (1) wedged-bystander close should drop ~2055ms -> ~300ms;
-      (2) healthy close/minimize unchanged (~65ms / ~190ms); (3) REGRESSION WATCH —
-      new-window detection for an app whose enumeration lands in the 250ms..2000ms band
-      now waits for the next probe (<=1.5s) where it used to succeed inline. If that bites
-      on real app launches (Xcode, Electron), raise the default to ~400-500ms (still 4x
-      better) rather than reverting.
+      409 tests green.
+      LIVE-VALIDATED against the debug build (2026-07-24), A/B on the SAME binary using
+      `ax-refresh-timeout-ms = 0` as the control — which reproduces the old path exactly
+      and doubles as a live test of the fall-back semantics:
+        A control (0 => 2000ms), wedged bystander ... 2016ms
+        B fix (250ms), wedged bystander ............... 279ms   (7.2x)
+        C fix (250ms), healthy .......................... 57ms   (unchanged vs fork.10's 65ms)
+        D new-window detection, healthy ................. 82ms open->tiled (no regression)
+      Validation hygiene: layout-daemon killed for the run — it probes for a '-fork' version
+      suffix that a 0.0.0-SNAPSHOT debug build does not have, so it would have fallen back to
+      LEGACY mode and spawned enforce-three-pane.sh mid-measurement. Restore verified: fork.10
+      back up, daemon back in fork mode, config byte-identical, all 8 windows on their original
+      workspaces.
+      STILL OPEN (deploy-time regression watch, NOT covered by D): an app whose enumeration
+      lands in the 250ms..2000ms band now waits for the next probe (<=1.5s) where it used to
+      succeed inline. D only exercised a healthy TextEdit. If real launches (Xcode, Electron)
+      show late tiling, raise the default to ~400-500ms (dose-response says ~540ms reflow,
+      still ~4x better) rather than reverting.
 
 ## Backlog / watch list
 
