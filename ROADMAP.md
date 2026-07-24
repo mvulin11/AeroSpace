@@ -32,7 +32,12 @@ Homebrew AeroSpace stays the daily driver until a fix is validated on the debug 
       Homebrew cask uninstalled; app at /Applications/AeroSpace.app, CLI at
       /opt/homebrew/bin/aerospace. Upstream PR for Phase 1:
       https://github.com/nikitabobko/AeroSpace/pull/2199
-      Build recipe (full build-release.sh needs Ruby 3.x for man pages — skipped):
+      Build recipe (SUPERSEDED 2026-07-24 — build-release.sh now takes --skip-docs, so the
+      whole script runs end to end including universal binary, codesign, validation and pack):
+        ./build-release.sh --build-version 0.21.3-fork.N \
+                           --codesign-identity aerospace-codesign-certificate --skip-docs
+        # then: cp -R .release/AeroSpace.app /Applications/ && cp .release/aerospace /opt/homebrew/bin/
+      Old manual recipe, kept in case the script breaks again:
         ./generate.sh --build-version 0.21.3-fork.N --codesign-identity aerospace-codesign-certificate --generate-git-hash
         swift build -c release --arch arm64 --product aerospace
         (cd xcode && xcodebuild clean build -scheme AeroSpace -destination "generic/platform=macOS" -configuration Release -derivedDataPath .xcode-build)
@@ -443,6 +448,40 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       says ~540ms reflow, still ~4x better than fork.10) rather than reverting — and add the
       key to the sync-mini filter at the same time.
 
+## Shrinking replacement tile (user-reported 2026-07-24, deployed in v0.21.3-fork.12)
+
+- [x] Branch: `fix/vacated-weight-share` — "close a window and open a new one and it's placed
+      as a third, do it again and it's a quarter". Reported against Chrome/Firefox with
+      screenshots; reproduces with any app.
+      MEASURED on a 1712pt monitor, workspace with only the test app:
+        2 windows ............. 852 | 852   correct
+        close + reopen ....... 1280 | 424   3:1
+        close + reopen ....... 1494 | 210   7:1
+        close + wait 7s + reopen  852 | 852   correct  <- TTL expiry is the tell
+      Root cause: `closedTilingPositionMemory` (added for native tabs) recorded the closed
+      window's ABSOLUTE weight and replayed it on the replacement. Weights are point-space and
+      `layoutTiles` rewrites every child's weight on each pass so they sum to the container, so
+      the recorded number is only meaningful against the sibling set it was measured with — by
+      the time the replacement arrives the survivor has absorbed the vacated space and the
+      replay lands on a different scale. The arithmetic predicts the observed pixels exactly:
+      survivor 1712 + replayed 856 = 2568, delta = (1712-2568)/2 = -428 => 1284 | 428, then
+      1498 | 214. Note `garbageCollect` records on EVERY tiling close, not just tab churn —
+      the "native tab" framing in the comment is about intent, not about a guard.
+      Only visible at 2 windows: at 3 and 4 the count-based reshape rebinds everything with
+      WEIGHT_AUTO and washes the bad weight out, which is why it looked app-specific.
+      Fix: record the share of the parent's total; restore it as
+      `w = share * S * (n + 1) / n`. NOT `share * S` — layoutTiles adds the same delta to every
+      child rather than scaling them, so a bound w settles at `w * n / (n + 1)`; the naive form
+      lands low by that factor and drifts again every cycle. Sole-child / empty-parent /
+      degenerate shares fall back to WEIGHT_AUTO.
+      3 unit tests (BackgroundTabTest): the shrink regression, sole-child fallback, and a
+      3-window exact round-trip (binary-exact powers of two) proving the restored window returns
+      to its ORIGINAL size once layoutTiles runs — i.e. the native-tab "keeps its size" property
+      the memory exists for still holds. 412 tests green.
+      LIVE-VALIDATED against the debug build with a settle-aware probe (samples only after two
+      identical consecutive reads, so it is timing-independent — the first attempt was racy on
+      the slower debug build and caught windows mid-tile): every cycle 852 | 852, fast and slow.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
@@ -462,8 +501,8 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.11 live (ALL phases 1-6 + centering v4 + native tabs +
-  reflow latency); fork.8/9/10/11 hot-swaps all self-restored via Phase 6 (window map +
+- MacBook: fork v0.21.3-fork.12 live (ALL phases 1-6 + centering v4 + native tabs +
+  reflow latency + vacated-weight share); fork.8/9/10/11/12 hot-swaps all self-restored via Phase 6 (window map +
   focus identical, zero manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
