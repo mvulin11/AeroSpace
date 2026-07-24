@@ -21,6 +21,7 @@ import Foundation
         GlobalObserver.initObserver()
         Workspace.garbageCollectUnusedWorkspaces() // init workspaces
         _ = Workspace.all.first?.focusWorkspace()
+        seedPersistedWorkspaceStateAtStartup() // must precede the first refresh session (window detection)
         await runHeavyCompleteRefreshSession(
             .startup,
             // It's important for the first initialization to be non cancellable

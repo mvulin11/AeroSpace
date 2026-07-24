@@ -49,7 +49,7 @@ func runHeavyCompleteRefreshSession(
         }
     }
     switch res {
-        case .success(()): break
+        case .success(()): schedulePersistWorkspaceState()
         case .failure(let err as CancellationError): check(assumeCancellable, "Non cancellable refresh session was canceled: \(err) (\(type(of: err)))")
         case .failure(let err): die("Illegal error: \(err)")
     }
@@ -84,6 +84,7 @@ func runLightSession<T>(
             focusAfter?.nativeFocus() // syncFocusToMacOs
         }
         if !event.isFocusFollowsMouse { scheduleCancellableCompleteRefreshSession(event) }
+        schedulePersistWorkspaceState()
         return result
     }
 }

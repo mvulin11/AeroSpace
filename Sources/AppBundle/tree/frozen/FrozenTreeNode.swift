@@ -30,6 +30,13 @@ struct FrozenContainer: Sendable {
         orientation = container.orientation
         weight = getWeightOrNil(container) ?? 1
     }
+
+    init(children: [FrozenTreeNode], layout: Layout, orientation: Orientation, weight: CGFloat) {
+        self.children = children
+        self.layout = layout
+        self.orientation = orientation
+        self.weight = weight
+    }
 }
 
 struct FrozenWindow: Sendable {
@@ -39,6 +46,11 @@ struct FrozenWindow: Sendable {
     @MainActor init(_ window: Window) {
         id = window.windowId
         weight = getWeightOrNil(window) ?? 1
+    }
+
+    init(id: UInt32, weight: CGFloat) {
+        self.id = id
+        self.weight = weight
     }
 }
 

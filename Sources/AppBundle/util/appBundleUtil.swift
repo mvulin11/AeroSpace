@@ -26,6 +26,8 @@ func initTerminationHandler() {
 private struct AppServerTerminationHandler: TerminationHandler {
     @MainActor
     func beforeTermination() {
+        // Flush pending workspace state so a restart right after a layout change still restores it
+        persistWorkspaceStateNow()
         // Make all windows fullscreen before Quit
         for window in MacWindow.allWindowsMap.values {
             // makeAllWindowsVisibleAndRestoreSize may be invoked when something went wrong (e.g. some windows are unbound)
