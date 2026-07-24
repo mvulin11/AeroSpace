@@ -142,6 +142,7 @@ private let configParser: [String: any ParserProtocol<Config>] = [
     "center-non-resizable-windows": Parser(\.centerNonResizableWindows, parseBool),
     "persist-workspace-assignments": Parser(\.persistWorkspaceAssignments, parseBool),
     "ax-app-timeout-ms": Parser(\.axAppTimeoutMs, parseInt),
+    "ax-refresh-timeout-ms": Parser(\.axRefreshTimeoutMs, parseInt),
     "exclude-background-tabs": Parser(\.excludeBackgroundTabs, parseBool),
 
     "default-root-container-layout": Parser(\.defaultRootContainerLayout, parseLayout),

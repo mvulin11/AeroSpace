@@ -71,11 +71,19 @@ extension Thread {
 struct AxTimeoutError: Error {}
 
 // Read from AX marshalling paths off the main actor; written only on config (re)load.
-// Initial value matches the Config default so behavior is consistent before the first sync
+// Initial values match the Config defaults so behavior is consistent before the first sync
 nonisolated(unsafe) private(set) var axAppTimeout: Duration? = .milliseconds(2000)
+/// Deadline for the window enumeration probe, which gates every reflow. See Config.axRefreshTimeoutMs
+nonisolated(unsafe) private(set) var axRefreshTimeout: Duration? = .milliseconds(250)
 
 @MainActor func syncAxAppTimeout(_ config: Config) {
-    unsafe axAppTimeout = config.axAppTimeoutMs > 0 ? .milliseconds(config.axAppTimeoutMs) : nil
+    let appTimeout: Duration? = config.axAppTimeoutMs > 0 ? .milliseconds(config.axAppTimeoutMs) : nil
+    unsafe axAppTimeout = appTimeout
+    // Stock mode (ax-app-timeout-ms = 0) means "no deadlines at all", so it disables the
+    // refresh deadline too — otherwise it would silently reintroduce timeout-with-abandon
+    unsafe axRefreshTimeout = appTimeout == nil
+        ? nil
+        : (config.axRefreshTimeoutMs > 0 ? .milliseconds(config.axRefreshTimeoutMs) : appTimeout)
 }
 
 private final class OneShotClaim: Sendable {

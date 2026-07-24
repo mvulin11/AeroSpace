@@ -378,6 +378,59 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       placement (memory TTL) for apps whose background tabs leave the AX list;
       apps whose tabs persist in AX restore exactly via the shelf path.
 
+## Close/minimize reflow latency (user-reported 2026-07-24, LIVE-VALIDATED, not yet deployed)
+
+- [x] Branch: `perf/reflow-latency` — "closing or minimizing an app takes a couple
+      seconds before the rest of the windows adjust".
+      MEASURED with a 200Hz CGWindowList probe (`optionOnScreenOnly`, ground truth of
+      what reaches the screen, independent of AeroSpace's own reporting):
+        * healthy baseline: close 67ms, app-quit 65ms, minimize 187ms after the
+          ~680ms macOS genie animation. All fine — the complaint is NOT the steady state.
+        * ONE wedged app (SIGSTOP'd Calculator) parked on an INVISIBLE workspace, with
+          no window on the visible monitor: close #1 2055ms, close #3 1607ms.
+      Root cause: `refresh()` calls `MacApp.refreshAllAndGetAliveWindowIds`, whose task
+      group awaits EVERY app before `layoutWorkspaces()` (the thing that actually moves
+      windows) can run. Phase 5's per-app deadline stops a wedged app from breaking the
+      session, but the session still pays the full `ax-app-timeout-ms` (2000) to *discover*
+      it is wedged — once per quarantine expiry — and that discovery gates the reflow of
+      every other app's windows. Confirmed by dose-response on the live release build
+      (reload-config applies the knob without a restart): 2000 -> 2054ms, 500 -> 543ms,
+      200 -> 59ms. The reflow latency IS the deadline, near-exactly.
+      Fix: give the enumeration probe its own, impatient deadline
+      (`ax-refresh-timeout-ms`, default 250) and leave deliberate AX work (setFrame,
+      focus, close) on the patient `ax-app-timeout-ms`. Justified because this call site's
+      failure mode is already designed to be benign — last known window ids, quarantine,
+      self-heal on the next probe — so it can afford to give up early, whereas a deliberate
+      operation cannot. Stock mode (`ax-app-timeout-ms = 0`) still disables both deadlines.
+      Immediate quarantine on the first refresh timeout is LOAD-BEARING, not incidental:
+      it is what makes the subsequent `normalizeLayoutReason` short-circuit that app's
+      per-window probes instead of then paying the 2000ms deadline on each of them
+      (without it the change makes things *worse*: 250ms + 2000ms).
+      Quarantine backoff 5s -> 1.5s: a re-probe now costs 250ms instead of 2000ms, so a
+      wedged app stalls at most one session per window by 250ms (~17% of a busy stream vs
+      40% before), and an app that was merely slow for one probe regains new-window
+      detection in <=1.5s instead of being denied it for 5s.
+      2 unit tests (ConfigTest): key parsing, and the sync semantics incl. 0 = fall back
+      to the app deadline and stock mode disabling both.
+      409 tests green.
+      LIVE-VALIDATED against the debug build (2026-07-24), A/B on the SAME binary using
+      `ax-refresh-timeout-ms = 0` as the control — which reproduces the old path exactly
+      and doubles as a live test of the fall-back semantics:
+        A control (0 => 2000ms), wedged bystander ... 2016ms
+        B fix (250ms), wedged bystander ............... 279ms   (7.2x)
+        C fix (250ms), healthy .......................... 57ms   (unchanged vs fork.10's 65ms)
+        D new-window detection, healthy ................. 82ms open->tiled (no regression)
+      Validation hygiene: layout-daemon killed for the run — it probes for a '-fork' version
+      suffix that a 0.0.0-SNAPSHOT debug build does not have, so it would have fallen back to
+      LEGACY mode and spawned enforce-three-pane.sh mid-measurement. Restore verified: fork.10
+      back up, daemon back in fork mode, config byte-identical, all 8 windows on their original
+      workspaces.
+      STILL OPEN (deploy-time regression watch, NOT covered by D): an app whose enumeration
+      lands in the 250ms..2000ms band now waits for the next probe (<=1.5s) where it used to
+      succeed inline. D only exercised a healthy TextEdit. If real launches (Xcode, Electron)
+      show late tiling, raise the default to ~400-500ms (dose-response says ~540ms reflow,
+      still ~4x better) rather than reverting.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
