@@ -182,6 +182,19 @@ public enum FormatVar: RawRepresentable, Equatable, CaseIterable, Sendable {
         case windowTitle = "window-title"
         case windowLayout = "window-layout" // An alias for windowParentContainerLayout
         case windowParentContainerLayout = "window-parent-container-layout"
+        // Fork feature: window geometry (prefetched from AX like the title)
+        case windowX = "window-x"
+        case windowY = "window-y"
+        case windowWidth = "window-width"
+        case windowHeight = "window-height"
+        case windowFrame = "window-frame" // X11 geometry convention: WxH+X+Y
+
+        public var needsFrame: Bool {
+            switch self {
+                case .windowX, .windowY, .windowWidth, .windowHeight, .windowFrame: true
+                case .windowId, .windowIsFullscreen, .windowTitle, .windowLayout, .windowParentContainerLayout: false
+            }
+        }
     }
 
     public enum WorkspaceFormatVar: String, Equatable, CaseIterable, Sendable {

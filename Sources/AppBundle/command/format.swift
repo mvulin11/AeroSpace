@@ -1,31 +1,40 @@
 import Common
 import Foundation
 
+// Title and frame live behind async AX calls while format expansion is synchronous,
+// so both are prefetched here, and only when the format actually references them
 struct WindowWithPrefetchedTitle {
     let window: Window
     let title: String?
+    let frame: Rect?
 
-    private init(window: Window, title: String?) {
+    private init(window: Window, title: String?, frame: Rect?) {
         self.window = window
         self.title = title
+        self.frame = frame
     }
 
     static func resolveWindow(_ window: Window, for formatVar: FormatVar, _ cm: CancellationMode) async throws -> Self {
-        try await resolveWindow(window, needsTitle: formatVar == .window(.windowTitle), cm)
+        let needsFrame = if case .window(let w) = formatVar { w.needsFrame } else { false }
+        return try await resolveWindow(window, needsTitle: formatVar == .window(.windowTitle), needsFrame: needsFrame, cm)
     }
 
     static func resolveWindow(_ window: Window, for format: [InterToken<InterVar>], _ cm: CancellationMode) async throws -> Self {
         let needsTitle = format.contains { $0 == .interVar(.formatVar(.window(.windowTitle))) }
-        return try await resolveWindow(window, needsTitle: needsTitle, cm)
+        let needsFrame = format.contains {
+            if case .interVar(.formatVar(.window(let w))) = $0 { w.needsFrame } else { false }
+        }
+        return try await resolveWindow(window, needsTitle: needsTitle, needsFrame: needsFrame, cm)
     }
 
-    private static func resolveWindow(_ window: Window, needsTitle: Bool, _ cm: CancellationMode) async throws -> Self {
+    private static func resolveWindow(_ window: Window, needsTitle: Bool, needsFrame: Bool, _ cm: CancellationMode) async throws -> Self {
         let title = needsTitle ? try await window.getTitle(cm) : nil
-        return .init(window: window, title: title)
+        let frame = needsFrame ? try await window.getAxRect(cm) : nil
+        return .init(window: window, title: title, frame: frame)
     }
 
-    static func forTest(window: Window, title: String?) -> Self {
-        .init(window: window, title: title)
+    static func forTest(window: Window, title: String?, frame: Rect? = nil) -> Self {
+        .init(window: window, title: title, frame: frame)
     }
 }
 
@@ -160,6 +169,12 @@ extension FormatVar {
                     case .windowIsFullscreen: .success(.bool(w.window.isFullscreen))
                     case .windowTitle: .success(.string(w.title.orDie("Title wasn't prefetched")))
                     case .windowLayout, .windowParentContainerLayout: toLayoutResult(w: w.window)
+                    // frame can be legitimately nil even when prefetched (window died mid-query)
+                    case .windowX: .success(w.frame.map { .int(Int($0.topLeftX.rounded())) } ?? .string("NULL-WINDOW-FRAME"))
+                    case .windowY: .success(w.frame.map { .int(Int($0.topLeftY.rounded())) } ?? .string("NULL-WINDOW-FRAME"))
+                    case .windowWidth: .success(w.frame.map { .int(Int($0.width.rounded())) } ?? .string("NULL-WINDOW-FRAME"))
+                    case .windowHeight: .success(w.frame.map { .int(Int($0.height.rounded())) } ?? .string("NULL-WINDOW-FRAME"))
+                    case .windowFrame: .success(.string(w.frame.map(toX11GeometryString) ?? "NULL-WINDOW-FRAME"))
                 }
             case (.workspace(let w), .workspace(let f)):
                 return switch f {
@@ -232,6 +247,13 @@ extension InterVar {
 func unknownInterpolationVariable(variable: String, _ obj: AeroObj) -> String {
     "Unknown interpolation variable '\(variable)'. " +
         "Possible values:\n\(getAvailableInterVars(for: obj.kind).joined(separator: "\n").prependLines("  "))"
+}
+
+private func toX11GeometryString(_ rect: Rect) -> String {
+    let x = Int(rect.topLeftX.rounded())
+    let y = Int(rect.topLeftY.rounded())
+    let sign = { (value: Int) in value < 0 ? "\(value)" : "+\(value)" }
+    return "\(Int(rect.width.rounded()))x\(Int(rect.height.rounded()))\(sign(x))\(sign(y))"
 }
 
 private func toLayoutString(tc: TilingContainer) -> String {

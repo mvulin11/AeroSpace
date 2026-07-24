@@ -81,6 +81,11 @@ The following variables can be used inside `<output-format>`:
 %{window-is-fullscreen}:: Boolean. Is window in fullscreen by `aerospace fullscreen` command
 %{window-layout}:: String. An alias for `%{window-parent-container-layout}`
 %{window-parent-container-layout}:: String. The layout (`v_tiles`, `h_tiles`, `v_accordion`, `h_accordion`, `floating`) of the window's parent container.
+%{window-x}:: Number. Window frame top-left x coordinate (fork extension)
+%{window-y}:: Number. Window frame top-left y coordinate (fork extension)
+%{window-width}:: Number. Window frame width (fork extension)
+%{window-height}:: Number. Window frame height (fork extension)
+%{window-frame}:: String. Window frame in X11 geometry convention `WxH+X+Y` (fork extension)
 
 %{app-bundle-id}:: String. Application unique identifier. https://developer.apple.com/documentation/appstoreconnectapi/bundle_ids[Bundle ID]
 %{app-name}:: String. Application name
