@@ -4,10 +4,12 @@ source ./script/setup.sh
 
 build_version="0.0.0-SNAPSHOT"
 codesign_identity="aerospace-codesign-certificate"
+skip_docs=0
 while test $# -gt 0; do
     case $1 in
         --build-version) build_version="$2"; shift 2;;
         --codesign-identity) codesign_identity="$2"; shift 2;;
+        --skip-docs) skip_docs=1; shift 1;;
         *) echo "Unknown option $1" > /dev/stderr; exit 1 ;;
     esac
 done
@@ -16,7 +18,13 @@ done
 ### BUILD ###
 #############
 
-./build-docs.sh --release
+# .site/.man are consumed only by script/publish-release.sh (the public website and man
+# pages); nothing in AeroSpace.app reads them, so a fork build installed locally can skip
+# them. Needed while the Gemfile pins ruby '~> 3.0' and Homebrew ships 4.x — build-docs.sh
+# aborts on the version mismatch and would otherwise block every local release build
+if test "$skip_docs" = 0; then
+    ./build-docs.sh --release
+fi
 ./build-shell-completion.sh
 
 ./generate.sh
