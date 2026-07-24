@@ -233,7 +233,12 @@ committing to a design. This is the highest-value *performance* fix and the risk
       workspace AND tree position (side-by-side pairs and the 7-window split tree
       survived; focused workspace restored). State file appeared within the 500ms
       debounce of the moves, bootTime matched sysctl. Release server's in-memory
-      assignments were untouched by the whole exercise. Next: deploy as fork.6.
+      assignments were untouched by the whole exercise.
+      DEPLOYED 2026-07-24 as v0.21.3-fork.6 (the deploy itself was the last
+      scattering restart — no release state file existed yet; layout re-scattered
+      by CLI from a pre-deploy capture, and the new server immediately began
+      writing workspace-state-bobko.aerospace.json). Layout daemon survived the
+      swap in fork mode. From now on WM restarts/hot-swaps restore themselves.
       Design: reuses the lock-screen FrozenWorld machinery instead of a parallel
       windowId→workspace map. Write side: after every successful refresh session a
       debounced (500ms) snapshot of the full frozen world (tree shape + weights +
@@ -281,9 +286,10 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 - [ ] Track upstream releases (currently on Homebrew 0.21.1-Beta; upstream at 0.21.3-Beta)
       and rebase fork branches after each.
 
-## Deployed state (2026-07-23)
+## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.1 live; `enable-count-based-layouts = true` in config;
+- MacBook: fork v0.21.3-fork.6 live (Phases 1, 2, 6 + centering v4);
+  `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
   manual resizes now survive; cmd-ctrl-b re-evens on demand).
