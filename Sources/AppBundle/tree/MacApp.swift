@@ -16,6 +16,16 @@ final class MacApp: AbstractApp {
     var lastNativeFocusedWindowId: UInt32? = nil
     private var thread: Thread?
     private var setFrameJobs: [UInt32: RunLoopJob] = [:]
+    // Quarantine after an AX timeout (#1615): while quarantined, every AX call to this app
+    // short-circuits to its degraded fallback instantly instead of paying the deadline again
+    // on every session. Expiry acts as the re-probe backoff; a successful probe ends it.
+    // Written after timeouts / successful probes, read from any calling context — Double
+    // loads/stores are single word-sized accesses on arm64 (same idiom as RunLoopJob)
+    nonisolated(unsafe) private var _axQuarantinedUntil: TimeInterval = 0
+    private static let axQuarantineBackoff: TimeInterval = 5
+    var isAxQuarantined: Bool { unsafe _axQuarantinedUntil > Date.now.timeIntervalSince1970 }
+    private func quarantineAx() { unsafe _axQuarantinedUntil = Date.now.timeIntervalSince1970 + MacApp.axQuarantineBackoff }
+    private func endAxQuarantine() { unsafe _axQuarantinedUntil = 0 }
     @MainActor private static var focusJob: RunLoopJob? = nil
 
     /*conforms*/ var name: String? { nsApp.localizedName }
@@ -118,6 +128,7 @@ final class MacApp: AbstractApp {
 
     // todo merge together with detectNewWindows
     func getFocusedWindow(_ cm: CancellationMode) async throws -> Window? {
+        if isAxQuarantined { return nil } // updateFocusCache(nil) keeps the previous focus
         let windowId: UInt32?
         do {
             windowId = try await thread?.runInLoop(cm, timeout: unsafe axAppTimeout) { [nsApp, axApp, windows] job in
@@ -126,7 +137,8 @@ final class MacApp: AbstractApp {
                     .windowId
             }
         } catch is AxTimeoutError {
-            return nil // wedged focused app: updateFocusCache(nil) keeps the previous focus
+            quarantineAx()
+            return nil
         }
         guard let windowId else { return nil }
         return try await MacWindow.getOrRegister(windowId: windowId, macApp: self)
@@ -177,11 +189,13 @@ final class MacApp: AbstractApp {
     }
 
     func getAxWindowsCount(_ cm: CancellationMode) async throws -> Int? {
+        if isAxQuarantined { return nil }
         do {
             return try await thread?.runInLoop(cm, timeout: unsafe axAppTimeout) { [axApp] job in
                 axApp.threadGuarded.get(Ax.windowsAttr)?.count
             }
         } catch is AxTimeoutError {
+            quarantineAx()
             return nil
         }
     }
@@ -290,13 +304,17 @@ final class MacApp: AbstractApp {
                 group.addTask { @Sendable @MainActor in
                     let pid = nsApp.processIdentifier
                     guard let app = try await MacApp.getOrRegister(nsApp) else { return (pid, []) }
+                    // The app is wedged (#1615): keep its last known windows so the session
+                    // completes and every other app tiles instantly. Its own windows stay
+                    // as they were and self-heal on the first probe after it recovers
+                    @MainActor func lastKnownWindowIds() -> (pid_t, [UInt32]) {
+                        (pid, MacWindow.allWindows.filter { $0.macApp.pid == pid }.map(\.windowId))
+                    }
+                    if app.isAxQuarantined { return lastKnownWindowIds() }
                     do {
                         return (pid, try await app.refreshAndGetAliveWindowIds(frontmostAppBundleId: frontmostAppBundleId))
                     } catch is AxTimeoutError {
-                        // The app is wedged (#1615): keep its last known windows so the session
-                        // completes and every other app tiles instantly. Its own windows stay
-                        // as they were and self-heal on the first refresh after it recovers
-                        return (pid, MacWindow.allWindows.filter { $0.macApp.pid == pid }.map(\.windowId))
+                        return lastKnownWindowIds()
                     }
                 }
             }
@@ -332,26 +350,34 @@ final class MacApp: AbstractApp {
             return []
         }
         guard let thread else { return [] }
-        // AxTimeoutError deliberately propagates: the caller substitutes last-known window ids
-        let (alive, dead) = try await thread.runInLoop(.cancellable, timeout: unsafe axAppTimeout) { [nsApp, windows, axApp] (job) -> ([UInt32], [UInt32]) in
-            var alive: [UInt32: AxWindow] = windows.threadGuarded
-            var dead = [UInt32: AxWindow]()
-            // Second line of defence against lock screen. See the first line of defence: closedWindowsCache
-            // Second and third lines of defence are technically needed only to avoid potential flickering
-            if frontmostAppBundleId != lockScreenAppBundleId {
-                (alive, dead) = try alive.partition {
-                    try job.checkCancellation()
-                    return $0.value.ax.containingWindowId() != nil
+        // AxTimeoutError propagates to the caller (which substitutes last-known window ids),
+        // but the quarantine bookkeeping lives here: this enumeration is the designated probe
+        let (alive, dead): ([UInt32], [UInt32])
+        do {
+            (alive, dead) = try await thread.runInLoop(.cancellable, timeout: unsafe axAppTimeout) { [nsApp, windows, axApp] (job) -> ([UInt32], [UInt32]) in
+                var alive: [UInt32: AxWindow] = windows.threadGuarded
+                var dead = [UInt32: AxWindow]()
+                // Second line of defence against lock screen. See the first line of defence: closedWindowsCache
+                // Second and third lines of defence are technically needed only to avoid potential flickering
+                if frontmostAppBundleId != lockScreenAppBundleId {
+                    (alive, dead) = try alive.partition {
+                        try job.checkCancellation()
+                        return $0.value.ax.containingWindowId() != nil
+                    }
                 }
-            }
 
-            for (id, window) in axApp.threadGuarded.get(Ax.windowsAttr) ?? [] {
-                try job.checkCancellation()
-                try alive.getOrRegisterAxWindow(windowId: id, window, nsApp, job)
-            }
+                for (id, window) in axApp.threadGuarded.get(Ax.windowsAttr) ?? [] {
+                    try job.checkCancellation()
+                    try alive.getOrRegisterAxWindow(windowId: id, window, nsApp, job)
+                }
 
-            windows.threadGuarded = alive
-            return (Array(alive.keys), Array(dead.keys))
+                windows.threadGuarded = alive
+                return (Array(alive.keys), Array(dead.keys))
+            }
+            endAxQuarantine() // the app responded — resume normal AX traffic
+        } catch is AxTimeoutError {
+            quarantineAx()
+            throw AxTimeoutError()
         }
         windowsCount = alive.count
         for windowId in dead {
@@ -375,12 +401,14 @@ final class MacApp: AbstractApp {
         _ cm: CancellationMode,
         _ body: @Sendable @escaping (AXUIElement, RunLoopJob) throws -> T?,
     ) async throws -> T? {
+        if isAxQuarantined { return nil }
         do {
             return try await thread?.runInLoop(cm, timeout: unsafe axAppTimeout) { [windows] job in
                 guard let window = windows.threadGuarded[windowId] else { return nil }
                 return try body(window.ax, job)
             }
         } catch is AxTimeoutError {
+            quarantineAx()
             return nil // the app is wedged (#1615) — degrade this call, not the whole session
         }
     }
