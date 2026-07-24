@@ -484,11 +484,25 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       DEPLOYED as v0.21.3-fork.12. Post-deploy on the installed build: every cycle 852 | 852,
       and the fork.11 reflow latency is unregressed (300ms wedged / 46ms healthy). Window map
       restored identically, daemon back in fork mode.
-      NOT INVESTIGATED: the user also mentioned "maybe half a second" to reposition after
-      closing a Chrome/Firefox window. fork.11 measures ~60ms healthy and ~300ms with a wedged
-      app, so a steady half second suggests Chrome/Firefox themselves sit in the
-      250ms..2000ms AX band — i.e. the `ax-refresh-timeout-ms` regression watch, not a
-      separate bug. Measure a real Chrome close before tuning that knob.
+      MEASURED 2026-07-24, and the "Chrome sits in the 250ms..2000ms AX band" hypothesis is
+      DISPROVEN — do NOT raise `ax-refresh-timeout-ms` on this evidence:
+        * Direct timing of the exact probe call, AXUIElementCopyAttributeValue(kAXWindowsAttribute),
+          across all 17 regular apps: Chrome 1.0ms median (max 18.8), Firefox 0.8ms (max 22.6).
+          The slowest app on the machine was Finder at 1.3ms. Nothing is remotely near 250ms,
+          so nothing is being spuriously quarantined. Tool: scratchpad/axtime.swift.
+        * Real Chrome windows on fork.12, 5 open/close trials, own window created and closed by
+          id so no existing window was touched: open -> tiled 119/123/134ms (min/med/max),
+          close -> reflow 68/92/96ms. Layout correct throughout (852|852 then 1712).
+      So there is no half-second on fork.12 and no evidence for tuning the knob. The report
+      predates fork.12 (screenshots 17:02, fork.12 installed ~17:20) and the reflow was already
+      fast then; the visible two-step on open — window appears at the app's own size, then gets
+      tiled ~120ms later — plus fork.11's wrong-sized result is the likelier thing that read as
+      sluggish. The 250ms..2000ms regression watch above stays open in principle for apps not
+      measured here, but no app on this machine is in that band.
+      Firefox open/close was NOT trialled: it does not implement the AppleScript
+      `make new window` and the call hangs. Driving it with synthetic cmd+N/cmd+W keystrokes
+      would risk closing real tabs, so it was skipped — its 0.8ms AX time is the relevant number
+      and it matches Chrome's.
 
 ## Backlog / watch list
 
