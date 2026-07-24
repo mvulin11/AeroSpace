@@ -55,6 +55,9 @@ struct Config: ConvenienceMutable {
     // Fork feature (#1615): deadline for AX requests to one app before the session degrades
     // to that app's last known state instead of stalling every app. 0 disables (stock behavior)
     var axAppTimeoutMs: Int = 2000
+    // Fork feature: shelve background macOS-native tab windows (Ghostty, Finder, ...) out of
+    // the tiling tree so creating/switching tabs doesn't reshape the workspace
+    var excludeBackgroundTabs: Bool = true
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()

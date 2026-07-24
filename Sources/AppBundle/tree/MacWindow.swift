@@ -91,6 +91,11 @@ final class MacWindow: Window {
             return
         }
         if !skipClosedWindowsCache { cacheClosedWindowIfNeeded() }
+        // Native-tab churn: if a same-app window shows up within seconds (the newly active
+        // tab), let it reclaim this exact spot instead of binding via the MRU heuristic
+        if let tilingParent = self.parent as? TilingContainer, let index = ownIndex {
+            recordClosedTilingPosition(pid: app.pid, parent: tilingParent, index: index, weight: getWeight(tilingParent.orientation))
+        }
         let parent = unbindFromParent().parent
         let deadWindowWorkspace = parent.nodeWorkspace
         broadcastEvent(.windowClosed(
@@ -276,7 +281,7 @@ extension Window {
     @MainActor
     func relayoutWindow(on workspace: Workspace, _ cm: CancellationMode, forceTile: Bool = false) async throws {
         let data = forceTile
-            ? unbindAndGetBindingDataForNewTilingWindow(workspace, window: self)
+            ? unbindAndGetBindingDataForNewTilingWindow(workspace, window: self, pid: app.pid)
             : try await unbindAndGetBindingDataForNewWindow(self.asMacWindow().windowId, self.asMacWindow().macApp, workspace, window: self, cm)
         bind(to: data.parent, adaptiveWeight: data.adaptiveWeight, index: data.index)
     }
@@ -289,14 +294,17 @@ private func unbindAndGetBindingDataForNewWindow(_ windowId: UInt32, _ macApp: M
     return switch try await macApp.getAxUiElementWindowType(windowId, windowLevel, cm) {
         case .popup: BindingData(parent: macosPopupWindowsContainer, adaptiveWeight: WEIGHT_AUTO, index: INDEX_BIND_LAST)
         case .dialog: BindingData(parent: workspace.floatingWindowsContainer, adaptiveWeight: WEIGHT_AUTO, index: INDEX_BIND_LAST)
-        case .window: unbindAndGetBindingDataForNewTilingWindow(workspace, window: window)
+        case .window: unbindAndGetBindingDataForNewTilingWindow(workspace, window: window, pid: macApp.pid)
     }
 }
 
 // The function is private because it's unsafe. It leaves the window in unbound state
 @MainActor
-private func unbindAndGetBindingDataForNewTilingWindow(_ workspace: Workspace, window: Window?) -> BindingData {
+private func unbindAndGetBindingDataForNewTilingWindow(_ workspace: Workspace, window: Window?, pid: pid_t?) -> BindingData {
     window?.unbindFromParent() // It's important to unbind to get correct data from below
+    if let pid, let vacated = consumeClosedTilingPosition(pid: pid, workspace: workspace) {
+        return vacated
+    }
     let mruWindow = workspace.mostRecentWindowRecursive
     if let mruWindow, let tilingParent = mruWindow.parent as? TilingContainer {
         return BindingData(
