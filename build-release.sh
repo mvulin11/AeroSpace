@@ -119,6 +119,7 @@ codesign -v .release/aerospace
 ### PACK ###
 ############
 
+mkdir -p ".release/AeroSpace-v$build_version"
 if test "$skip_docs" = 0; then
     mkdir -p ".release/AeroSpace-v$build_version/manpage" && cp .man/*.1 ".release/AeroSpace-v$build_version/manpage"
 fi
