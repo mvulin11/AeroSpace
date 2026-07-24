@@ -239,6 +239,14 @@ committing to a design. This is the highest-value *performance* fix and the risk
       by CLI from a pre-deploy capture, and the new server immediately began
       writing workspace-state-bobko.aerospace.json). Layout daemon survived the
       swap in fork mode. From now on WM restarts/hot-swaps restore themselves.
+      fork.7 follow-up (same day): the fork.6 self-restore test brought every
+      window back but left FOCUS on workspace 1 (startup focuses the first
+      workspace before the seed is restored). Now the focused workspace name is
+      persisted too (optional field — fork.6 files still decode) and re-focused
+      inside the restore path under an isStartup guard, so lock-unlock restores
+      keep leaving focus to native tracking. Verified live: fork.6→fork.7
+      hot-swap self-restored all 14 windows AND focus with zero intervention —
+      the acceptance criterion end-to-end.
       Design: reuses the lock-screen FrozenWorld machinery instead of a parallel
       windowId→workspace map. Write side: after every successful refresh session a
       debounced (500ms) snapshot of the full frozen world (tree shape + weights +
@@ -288,7 +296,7 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.6 live (Phases 1, 2, 6 + centering v4);
+- MacBook: fork v0.21.3-fork.7 live (Phases 1, 2, 6 + centering v4);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
