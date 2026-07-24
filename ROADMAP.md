@@ -481,6 +481,14 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       LIVE-VALIDATED against the debug build with a settle-aware probe (samples only after two
       identical consecutive reads, so it is timing-independent — the first attempt was racy on
       the slower debug build and caught windows mid-tile): every cycle 852 | 852, fast and slow.
+      DEPLOYED as v0.21.3-fork.12. Post-deploy on the installed build: every cycle 852 | 852,
+      and the fork.11 reflow latency is unregressed (300ms wedged / 46ms healthy). Window map
+      restored identically, daemon back in fork mode.
+      NOT INVESTIGATED: the user also mentioned "maybe half a second" to reposition after
+      closing a Chrome/Firefox window. fork.11 measures ~60ms healthy and ~300ms with a wedged
+      app, so a steady half second suggests Chrome/Firefox themselves sit in the
+      250ms..2000ms AX band — i.e. the `ax-refresh-timeout-ms` regression watch, not a
+      separate bug. Measure a real Chrome close before tuning that knob.
 
 ## Backlog / watch list
 
