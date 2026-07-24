@@ -260,7 +260,8 @@ final class MacApp: AbstractApp {
     static func refreshAllAndGetAliveWindowIds(frontmostAppBundleId: String?) async throws -> [MacApp: [UInt32]] {
         for (_, app) in MacApp.allAppsMap { // gc dead apps
             try checkCancellation()
-            if app.nsApp.isTerminated {
+            // isTerminated can be stale for hard-crashed (SIGKILL) processes; kill(pid, 0) is truth
+            if app.nsApp.isTerminated || !isProcessAlive(app.pid) {
                 await app.destroy()
             }
         }
@@ -331,7 +332,17 @@ final class MacApp: AbstractApp {
     }
 
     private func destroy() async {
-        _ = await Task.startUnstructured { @MainActor [pid] in _ = MacApp.allAppsMap.removeValue(forKey: pid) }.result
+        _ = await Task.startUnstructured { @MainActor [pid] in
+            _ = MacApp.allAppsMap.removeValue(forKey: pid)
+            // GC the app's windows here instead of waiting for the refresh loop's alive-check:
+            // that check runs after the full per-app window enumeration, which a single busy
+            // app can stall (#1615), and the whole session is cancellable — event storms could
+            // starve it indefinitely, leaving ghost windows. This task is non-cancellable, so
+            // once an app is seen dead its windows are gone (and window-closed fires) for sure
+            for window in MacWindow.allWindows where window.macApp.pid == pid {
+                window.garbageCollect(skipClosedWindowsCache: false)
+            }
+        }.result
         for (_, job) in setFrameJobs {
             job.cancel()
         }

@@ -138,6 +138,12 @@ extension CGPoint: @retroactive Hashable { // todo migrate to self written Point
     let isDebug = false
 #endif
 
+/// kill(pid, 0) probes process existence without delivering a signal.
+/// EPERM still proves the process exists (just not signalable by us)
+func isProcessAlive(_ pid: pid_t) -> Bool {
+    kill(pid, 0) == 0 || errno == EPERM
+}
+
 @inlinable
 func checkCancellation(_ cm: CancellationMode = .cancellable) throws(CancellationError) {
     if cm == .cancellable && Task.isCancelled {
