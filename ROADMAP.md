@@ -348,6 +348,36 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 **Acceptance**: hot-swap deploy → every window returns to its workspace.
 
+## macOS-native tabs (user-reported 2026-07-24, deployed in v0.21.3-fork.10)
+
+- [x] Branch: `feat/native-tabs` — Ghostty cmd+T "treats a tab like a new window and
+      sorts it as such". Native tabs are real AXWindows; upstream tracks only the
+      ACTIVE tab (verified with a programmatic NSWindow-tabbing probe app), so the
+      damage happens in TRANSITIONS: the previously active tab's window leaves the AX
+      list and is GC'd while the new active tab arrives as a "new" window that binds
+      via the MRU heuristic — tile hops + count-blip reshapes.
+      Fix (two cooperating mechanisms):
+      1. Ordered-out shelving in normalizeLayoutReason (4th state alongside
+         fullscreen/minimized/hidden-app): not-onscreen per CGWindowList while none
+         of the other three apply => background native tab; shelved like minimized,
+         restored when ordered back in. Fullscreen precedence must stay FIRST
+         (fullscreen windows live on their own Space and also read not-onscreen);
+         detection skipped while screen is locked. VERIFIED SAFE: every corner-parked
+         hidden-workspace window reads onscreen=true; background tab reads false.
+         Config: exclude-background-tabs (default true).
+      2. Vacated-position memory (closedTilingPositionMemory.swift): GC'd or shelved
+         tiling windows record (pid, parent, index, weight) for 5s; the next new
+         window of that app on that workspace reclaims the exact spot AND size
+         instead of MRU insertion. Also gives cmd+W→new-window position inheritance.
+      Live-validated with a scripted tab lifecycle (create/switch/switch/close/exit)
+      against the debug server: exactly one probe window in the tree at every phase,
+      same position throughout, all 13 other windows in identical order, log clean.
+      5 unit tests (BackgroundTabTest): shelve+restore round-trip to exact index,
+      nil-info no-op, memory match/expiry/consume, workspace scoping, index clamp.
+      Limitation: switching back to a tab idle >5s falls back to MRU-adjacent
+      placement (memory TTL) for apps whose background tabs leave the AX list;
+      apps whose tabs persist in AX restore exactly via the shelf path.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
@@ -362,8 +392,8 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.9 live (ALL phases 1-6 + centering v4);
-  fork.8 and fork.9 hot-swaps both self-restored via Phase 6 (window map + focus
+- MacBook: fork v0.21.3-fork.10 live (ALL phases 1-6 + centering v4 + native tabs);
+  fork.8/9/10 hot-swaps all self-restored via Phase 6 (window map + focus
   identical, zero manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
