@@ -204,6 +204,12 @@ committing to a design. This is the highest-value *performance* fix and the risk
       resizability. v2 observes clamping via one size readback after layout, cached
       per window (conforming windows pay one readback ever). LIVE-VALIDATED: System
       Settings at exact tile center x=502 = 8+(1712-723)/2.
+      v2 REGRESSION (user-reported 2026-07-24, fixed in fork.4): the two-step
+      "place top-left, then re-center after readback" ran on EVERY layout pass, so
+      clamping windows visibly hopped left and back constantly. v3 caches the last
+      clamped size (knownClampedAxSize) and places known-clamping windows at the
+      centered position directly; re-positions only when the observed size moves
+      the centering target. Steady state = one setAxFrame at the correct spot.
 - Later rounds: SketchyBar workspace indicator driven by fork events (window-closed
   makes per-workspace app icons accurate); empty-workspace window routing; #386
   cursor-fling skip; resize mode bindings.
