@@ -262,6 +262,17 @@ final class MacApp: AbstractApp {
             try checkCancellation()
             // isTerminated can be stale for hard-crashed (SIGKILL) processes; kill(pid, 0) is truth
             if app.nsApp.isTerminated || !isProcessAlive(app.pid) {
+                // GC the app's windows here instead of relying on the refresh loop's alive-check:
+                // that check runs after the full per-app window enumeration, which a single busy
+                // app can stall (#1615) — this sweep runs before it. The GC loop must stay
+                // synchronous (no awaits) and inside the session task: tree mutations may only
+                // interleave with a concurrent session's layout pass at suspension points, and
+                // layoutRecursive dies on a tree that changes under it. Windows go before
+                // destroy() so a cancellation between the two can't strand them (destroy()
+                // removes the app from allAppsMap, which would end this sweep's reach)
+                for window in MacWindow.allWindows where window.macApp.pid == app.pid {
+                    window.garbageCollect(skipClosedWindowsCache: false)
+                }
                 await app.destroy()
             }
         }
@@ -332,17 +343,7 @@ final class MacApp: AbstractApp {
     }
 
     private func destroy() async {
-        _ = await Task.startUnstructured { @MainActor [pid] in
-            _ = MacApp.allAppsMap.removeValue(forKey: pid)
-            // GC the app's windows here instead of waiting for the refresh loop's alive-check:
-            // that check runs after the full per-app window enumeration, which a single busy
-            // app can stall (#1615), and the whole session is cancellable — event storms could
-            // starve it indefinitely, leaving ghost windows. This task is non-cancellable, so
-            // once an app is seen dead its windows are gone (and window-closed fires) for sure
-            for window in MacWindow.allWindows where window.macApp.pid == pid {
-                window.garbageCollect(skipClosedWindowsCache: false)
-            }
-        }.result
+        _ = await Task.startUnstructured { @MainActor [pid] in _ = MacApp.allAppsMap.removeValue(forKey: pid) }.result
         for (_, job) in setFrameJobs {
             job.cancel()
         }
