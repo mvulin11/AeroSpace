@@ -210,6 +210,15 @@ committing to a design. This is the highest-value *performance* fix and the risk
       clamped size (knownClampedAxSize) and places known-clamping windows at the
       centered position directly; re-positions only when the observed size moves
       the centering target. Steady state = one setAxFrame at the correct spot.
+      v3 REGRESSION (user screenshot 2026-07-24, fixed in fork.5): Chrome applies
+      resizes ASYNCHRONOUSLY, so a readback can catch the pre-resize size; v3
+      classified clamping on a single observation and never self-healed -> a Chrome
+      window got pinned to a phantom 381pt clamped size and was "centered" a third
+      off-screen forever (y=387 instead of 46; size was correct). v4: clamping needs
+      3 consecutive identical clamp observations (real fixed sizes repeat, races
+      don't); until confirmed the window lays out stock; a clamping window observed
+      conforming resets to unknown. LESSON: never permanently trust a single AX
+      observation - confirm, and always leave a self-heal path.
 - Later rounds: SketchyBar workspace indicator driven by fork events (window-closed
   makes per-workspace app icons accurate); empty-workspace window routing; #386
   cursor-fling skip; resize mode bindings.
