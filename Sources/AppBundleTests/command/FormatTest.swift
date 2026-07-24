@@ -51,6 +51,42 @@ final class FormatTest: XCTestCase {
         assertNil(withoutTitle.title)
     }
 
+    func testResolveWindowPrefetchesFrameOnlyWhenNeeded() async throws {
+        let rect = Rect(topLeftX: 8, topLeftY: 46, width: 1712, height: 1039)
+        let window = TestWindow.new(id: 8, parent: Workspace.get(byName: name).rootTilingContainer, rect: rect)
+
+        let withFrame = try await WindowWithPrefetchedTitle.resolveWindow(window, for: .window(.windowFrame), .nonCancellable)
+        assertEquals(withFrame.frame?.width, 1712)
+
+        let withoutFrame = try await WindowWithPrefetchedTitle.resolveWindow(window, for: .window(.windowId), .nonCancellable)
+        assertNil(withoutFrame.frame)
+
+        let tokensWithFrame = try await WindowWithPrefetchedTitle.resolveWindow(window, for: [
+            .interVar(.formatVar(.window(.windowX))),
+        ], .nonCancellable)
+        assertEquals(tokensWithFrame.frame?.topLeftX, 8)
+
+        let tokensWithoutFrame = try await WindowWithPrefetchedTitle.resolveWindow(window, for: [
+            .interVar(.formatVar(.window(.windowTitle))),
+        ], .nonCancellable)
+        assertNil(tokensWithoutFrame.frame)
+    }
+
+    func testWindowFrameFormatVarsExpansion() {
+        let window = TestWindow.new(id: 9, parent: Workspace.get(byName: name).rootTilingContainer)
+        let rect = Rect(topLeftX: -100, topLeftY: 46, width: 1712, height: 1039)
+        let obj = AeroObj.window(.forTest(window: window, title: nil, frame: rect))
+        assertPrimitive(FormatVar.window(.windowX).expandFormatVar(obj: obj), .int(-100))
+        assertPrimitive(FormatVar.window(.windowY).expandFormatVar(obj: obj), .int(46))
+        assertPrimitive(FormatVar.window(.windowWidth).expandFormatVar(obj: obj), .int(1712))
+        assertPrimitive(FormatVar.window(.windowHeight).expandFormatVar(obj: obj), .int(1039))
+        assertPrimitive(FormatVar.window(.windowFrame).expandFormatVar(obj: obj), .string("1712x1039-100+46"))
+
+        let noFrame = AeroObj.window(.forTest(window: window, title: nil, frame: nil))
+        assertPrimitive(FormatVar.window(.windowFrame).expandFormatVar(obj: noFrame), .string("NULL-WINDOW-FRAME"))
+        assertPrimitive(FormatVar.window(.windowX).expandFormatVar(obj: noFrame), .string("NULL-WINDOW-FRAME"))
+    }
+
     func testFormatEmptyInput() {
         let result: [AeroObj] = []
         assertSucc(result.format([.interVar(.formatVar(.window(.windowId)))]), [])
