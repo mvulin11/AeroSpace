@@ -121,7 +121,27 @@ retry loop; manual `cmd-ctrl-shift-r` re-assert becomes redundant.
 
 ## Phase 3 — Server-side ghost-window GC
 
-- [ ] Branch: `feat/dead-pid-gc`
+- [x] Branch: `feat/dead-pid-gc` — implemented, LIVE-VALIDATED, and DEPLOYED
+      2026-07-24 in v0.21.3-fork.8. Both investigation gaps confirmed and fixed:
+      kill(pid,0) liveness probe (with EPERM=alive; 3 unit tests) added to the
+      dead-app sweep, and the dead app's windows are GC'd in the sweep itself —
+      which runs BEFORE the per-app enumeration that #1615 stalls — instead of
+      after it. Live: SIGKILL'd TextEdit's window left the tree in 0.4s with
+      exactly one window-closed event, under a 30-call concurrent CLI hammer,
+      across 3 kill cycles, log clean.
+      CRASH LESSON (first attempt died in live validation): GC'ing the windows
+      from an unstructured non-cancellable MainActor task interleaved with a
+      light session's layout pass at a suspension point — layoutRecursive dies
+      (getWeight) when the tree mutates under it. ALL tree mutations must happen
+      inside the single active session task, serialized by the cancel-on-new-
+      session discipline; "non-cancellable so it always runs" was precisely the
+      bug. The GC loop is now synchronous (no awaits) inside the sweep, placed
+      before destroy() so a cancellation between the two can't strand windows
+      (destroy removes the app from allAppsMap, ending the sweep's reach).
+      prune-ghost-windows.sh: KEEP RUNNING for now — retire after its logs show
+      zero real prunes for a few days (and check whether the YouTube-PWA ghost
+      recurs; if it does, it's not dead-PID and needs its own root-cause).
+      Retirement requires the lockstep sync-mini + ~/.aerospace.toml updates.
 
 **Problem**: windows whose owning app PID is dead linger in the tree ("ghost windows");
 `prune-ghost-windows.sh` polls `list-windows` + `ps` on a 15s debounce to close them.
@@ -154,7 +174,16 @@ dead-app sweep. Confirm with DAEMON_LOG evidence or a repro before coding.
 
 ## Phase 4 — Window geometry in the CLI
 
-- [ ] Branch: `feat/window-frame-format-token`
+- [x] Branch: `feat/window-frame-format-token` — implemented, LIVE-VALIDATED, and
+      DEPLOYED 2026-07-24 in v0.21.3-fork.8. Five new tokens: %{window-x/y/width/
+      height} (Numbers, rounded) and %{window-frame} (X11 geometry WxH+X+Y).
+      Frame is PREFETCHED like the title (AX is async, format expansion is sync)
+      and only when the format references a geometry token; nil frame (window
+      died mid-query) renders NULL-WINDOW-FRAME. Live: tiled frames matched the
+      real splits, and hidden-workspace windows correctly reported their
+      park-corner coordinates (1727,1085 bottom-right) — geometry is AX truth,
+      not tile-slot fiction. Docs updated in aerospace-list-windows.adoc.
+      2 new FormatTests; EchoCommand/TestCommand golden strings updated.
 
 **Problem**: the CLI exposes no window geometry, so layout drift (Xcode restoring frames,
 a busy app swallowing a setFrame) is undetectable. Workaround is a blind `balance-sizes`
@@ -296,7 +325,9 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.7 live (Phases 1, 2, 6 + centering v4);
+- MacBook: fork v0.21.3-fork.8 live (Phases 1, 2, 3, 4, 6 + centering v4);
+  fork.8 hot-swap self-restored via Phase 6 (window map + focus identical, zero
+  manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
