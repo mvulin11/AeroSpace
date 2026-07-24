@@ -225,6 +225,24 @@ committing to a design. This is the highest-value *performance* fix and the risk
 - PROCESS NOTE: the build recipe ends with `git checkout .` — it discards ANY
   uncommitted edits, not just generated files. Commit everything before building.
 
+## Phase 6 — Persist workspace assignments across restarts (high value)
+
+- [ ] Branch: `feat/persist-workspace-assignments`
+
+**Problem (root-caused 2026-07-24)**: upstream has NO workspace persistence (grep:
+only a UI pref uses UserDefaults). On startup every window binds to its monitor's
+active workspace, so any server restart (hot-swap deploys included) heaps all
+windows onto one workspace. Side effect chain observed live: 12 windows in one
+v-stack → ~88pt tiles → Chrome clamps at its ~375pt min height → (with pre-v4
+classification) Chrome got pinned as "clamping" and mis-centered later.
+
+**Fix sketch**: debounced dump of windowId → (workspace, floating?) to a state file
+on every tree change; on startup, restore assignments for window ids that still
+exist before falling back to monitor-position binding. CGWindowIDs are stable while
+apps run, so this covers WM restarts/crashes (not machine reboots).
+
+**Acceptance**: hot-swap deploy → every window returns to its workspace.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
