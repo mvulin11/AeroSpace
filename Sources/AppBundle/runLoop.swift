@@ -16,20 +16,47 @@ extension Thread {
 
     func runInLoop<T>(
         _ cm: CancellationMode,
+        timeout: Duration? = nil,
         _ body: @Sendable @escaping (RunLoopJob) throws -> T,
     ) async throws -> T { // todo try to convert to typed throws
         try checkCancellation(cm)
         let job = RunLoopJob(cm)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
-                // It's unsafe to implicitly cancel because cont.resume should be invoked exactly once
+                // The continuation may be raced by the timeout watchdog below, and
+                // cont.resume must be invoked exactly once — the claim guard arbitrates
+                let claim = OneShotClaim()
+                // Timeout-with-abandon (#1615): a wedged app blocks its AX thread inside a
+                // single AX call for up to the AX messaging timeout (6s) — per call — and no
+                // cooperative cancellation check can run while it's blocked. The watchdog
+                // abandons the await so the caller can degrade; the closure still finishes
+                // on the AX thread eventually and its side effects apply (self-healing),
+                // but its resume becomes a no-op via the claim guard
+                let watchdog: Task<(), any Error>? = if let timeout, cm == .cancellable {
+                    Task {
+                        try await Task.sleep(for: timeout)
+                        if claim.tryClaim() {
+                            job.cancel()
+                            cont.resume(throwing: AxTimeoutError())
+                        }
+                    }
+                } else {
+                    nil
+                }
                 self.runInLoopAsync(job: job, autoCheckCancelled: false) { job in
                     do {
                         try job.checkCancellation()
-                        cont.resume(returning: try body(job))
+                        let result = try body(job)
+                        if claim.tryClaim() {
+                            watchdog?.cancel()
+                            cont.resume(returning: result)
+                        }
                     } catch {
                         if cm == .nonCancellable { die() }
-                        cont.resume(throwing: error)
+                        if claim.tryClaim() {
+                            watchdog?.cancel()
+                            cont.resume(throwing: error)
+                        }
                     }
                 }
             }
@@ -37,6 +64,23 @@ extension Thread {
             job.cancel()
         }
     }
+}
+
+/// An AX request to an unresponsive app exceeded the configured deadline (ax-app-timeout-ms).
+/// Distinct from CancellationError so callers can degrade instead of aborting the session
+struct AxTimeoutError: Error {}
+
+// Read from AX marshalling paths off the main actor; written only on config (re)load.
+// Initial value matches the Config default so behavior is consistent before the first sync
+nonisolated(unsafe) private(set) var axAppTimeout: Duration? = .milliseconds(2000)
+
+@MainActor func syncAxAppTimeout(_ config: Config) {
+    unsafe axAppTimeout = config.axAppTimeoutMs > 0 ? .milliseconds(config.axAppTimeoutMs) : nil
+}
+
+private final class OneShotClaim: Sendable {
+    nonisolated(unsafe) private var _claimed: Int32 = 0
+    func tryClaim() -> Bool { unsafe OSAtomicCompareAndSwapInt(0, 1, &_claimed) }
 }
 
 private final class RunLoopAction: NSObject, Sendable {
