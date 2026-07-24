@@ -202,7 +202,44 @@ manual resizes survive workspace round-trips unless real drift occurred.
 
 ## Phase 5 — The hard one: busy-app AX stall (#1615)
 
-- [ ] Branch: `feat/ax-isolation` (attempt only after Phases 1–4 are live)
+- [x] Branch: `feat/ax-isolation` — implemented, LIVE-VALIDATED, and DEPLOYED
+      2026-07-24 in v0.21.3-fork.9.
+      Root cause confirmed: runInLoop awaits a continuation that only resumes when
+      the app's dedicated AX thread executes the action; a wedged app blocks its
+      thread inside a single AX call for up to the 6s messaging timeout PER CALL,
+      the refresh task group awaits ALL apps, and cooperative cancellation can't
+      run while the thread is blocked — so every session stalls behind the slowest
+      app and cancel-restart churn means they may never complete.
+      Fix (two layers):
+      1. TIMEOUT-WITH-ABANDON: runInLoop gains a deadline (`ax-app-timeout-ms`,
+         default 2000, 0 = stock); a watchdog races the run-loop action for a
+         one-shot continuation claim. On timeout the await is abandoned (throws
+         AxTimeoutError, distinct from CancellationError so callers degrade
+         instead of aborting); the closure still finishes on the AX thread later
+         and its side effects apply. Degradation per call site: refresh
+         enumeration → last-known window ids (session completes, no false GC);
+         withWindow/getFocusedWindow/getAxWindowsCount → existing nil paths
+         (updateFocusCache(nil) keeps previous focus).
+      2. QUARANTINE: without it every session re-paid the full deadline on the
+         wedged app (~2s/session forever). After a timeout the app is quarantined
+         for 5s — all its AX calls short-circuit to fallbacks instantly; the
+         refresh enumeration doubles as the re-probe and a success ends the
+         quarantine.
+      Live validation (SIGSTOP'd TextEdit as the wedge): new windows tiled at
+      exact no-wedge baseline parity (2.2s vs 2.3s, launch-dominated), and
+      workspace move round-trips ran at 0.43-0.49s while the app was hard-wedged
+      — one unresponsive app degrades ONLY itself, self-heals on recovery
+      (verified: window title/frame readable again post-SIGCONT).
+      3 unit tests (RunLoopTimeoutTest): timeout-under-wedge fires on deadline,
+      abandoned action's late resume is swallowed (no double-resume crash),
+      nil timeout = stock blocking.
+      Known wedge-era nuance (harmless, self-healing): abandoned enumerations
+      eventually run against the still-stopped process, read nils, and can drop
+      the app's internal AxWindow entries + AX subscriptions; the tree windows
+      survive (last-known ids) and the first post-recovery probe re-registers
+      and re-subscribes everything.
+      Validation footnote: TextEdit's window in the close test was its Open
+      dialog (no AX close button) — `close` no-ops on it by design; not a bug.
 
 **Problem**: one wedged/busy app's AX thread stalls window detection for ALL apps
 (upstream #1615, open). Symptom: windows suddenly take seconds to tile until the heavy
@@ -325,9 +362,9 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.8 live (Phases 1, 2, 3, 4, 6 + centering v4);
-  fork.8 hot-swap self-restored via Phase 6 (window map + focus identical, zero
-  manual steps);
+- MacBook: fork v0.21.3-fork.9 live (ALL phases 1-6 + centering v4);
+  fork.8 and fork.9 hot-swaps both self-restored via Phase 6 (window map + focus
+  identical, zero manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
