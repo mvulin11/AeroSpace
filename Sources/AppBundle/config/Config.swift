@@ -52,6 +52,9 @@ struct Config: ConvenienceMutable {
     var centerNonResizableWindows: Bool = true
     // Fork feature: restore windowId -> workspace assignments after a server restart (state file survives WM restarts, not reboots)
     var persistWorkspaceAssignments: Bool = true
+    // Fork feature (#1615): deadline for AX requests to one app before the session degrades
+    // to that app's last known state instead of stalling every app. 0 disables (stock behavior)
+    var axAppTimeoutMs: Int = 2000
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()
