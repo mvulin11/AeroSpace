@@ -227,8 +227,13 @@ committing to a design. This is the highest-value *performance* fix and the risk
 
 ## Phase 6 — Persist workspace assignments across restarts (high value)
 
-- [~] Branch: `feat/persist-workspace-assignments` — implemented + unit-tested
-      2026-07-24; NEEDS LIVE VALIDATION on the debug build (restart cycle).
+- [x] Branch: `feat/persist-workspace-assignments` — implemented, unit-tested, and
+      LIVE-VALIDATED 2026-07-24 on the debug build: 14 windows scattered across
+      workspaces 1-5, SIGINT + relaunch → every window returned to its exact
+      workspace AND tree position (side-by-side pairs and the 7-window split tree
+      survived; focused workspace restored). State file appeared within the 500ms
+      debounce of the moves, bootTime matched sysctl. Release server's in-memory
+      assignments were untouched by the whole exercise. Next: deploy as fork.6.
       Design: reuses the lock-screen FrozenWorld machinery instead of a parallel
       windowId→workspace map. Write side: after every successful refresh session a
       debounced (500ms) snapshot of the full frozen world (tree shape + weights +
