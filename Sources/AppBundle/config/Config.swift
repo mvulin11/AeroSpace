@@ -55,6 +55,15 @@ struct Config: ConvenienceMutable {
     // Fork feature (#1615): deadline for AX requests to one app before the session degrades
     // to that app's last known state instead of stalling every app. 0 disables (stock behavior)
     var axAppTimeoutMs: Int = 2000
+    // Fork feature: deadline for the per-app window enumeration probe specifically. Much
+    // shorter than axAppTimeoutMs because this one call site gates every reflow: closing or
+    // minimizing a window can't re-tile the survivors until the enumeration returns for ALL
+    // apps, so one unresponsive app anywhere on the system (even with no window on the visible
+    // monitor) used to add the whole axAppTimeoutMs to every reflow. Degrading here is benign
+    // and already designed for — last known window ids, quarantine, self-heal on the next
+    // probe — so this deadline buys latency at almost no correctness cost. Deliberate AX work
+    // (setFrame, focus, close) keeps the patient axAppTimeoutMs. 0 = reuse axAppTimeoutMs
+    var axRefreshTimeoutMs: Int = 250
     // Fork feature: shelve background macOS-native tab windows (Ghostty, Finder, ...) out of
     // the tiling tree so creating/switching tabs doesn't reshape the workspace
     var excludeBackgroundTabs: Bool = true

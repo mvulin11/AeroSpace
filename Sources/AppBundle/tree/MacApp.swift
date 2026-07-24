@@ -22,7 +22,12 @@ final class MacApp: AbstractApp {
     // Written after timeouts / successful probes, read from any calling context — Double
     // loads/stores are single word-sized accesses on arm64 (same idiom as RunLoopJob)
     nonisolated(unsafe) private var _axQuarantinedUntil: TimeInterval = 0
-    private static let axQuarantineBackoff: TimeInterval = 5
+    // Re-probe backoff. Short, because the enumeration probe that pays for a re-probe now costs
+    // axRefreshTimeout (250ms) rather than axAppTimeout (2s): a permanently wedged app stalls at
+    // most one session per backoff window by 250ms (~17% of a busy stream, vs 40% at 5s/2s), and
+    // an app that was merely slow for one probe — not wedged — recovers full fidelity in <=1.5s
+    // instead of being denied new-window detection for 5s
+    private static let axQuarantineBackoff: TimeInterval = 1.5
     var isAxQuarantined: Bool { unsafe _axQuarantinedUntil > Date.now.timeIntervalSince1970 }
     private func quarantineAx() { unsafe _axQuarantinedUntil = Date.now.timeIntervalSince1970 + MacApp.axQuarantineBackoff }
     private func endAxQuarantine() { unsafe _axQuarantinedUntil = 0 }
@@ -354,7 +359,10 @@ final class MacApp: AbstractApp {
         // but the quarantine bookkeeping lives here: this enumeration is the designated probe
         let (alive, dead): ([UInt32], [UInt32])
         do {
-            (alive, dead) = try await thread.runInLoop(.cancellable, timeout: unsafe axAppTimeout) { [nsApp, windows, axApp] (job) -> ([UInt32], [UInt32]) in
+            // axRefreshTimeout, not axAppTimeout: this enumeration gates the reflow of every
+            // other app's windows, so it must be impatient. Timing out here is benign (see
+            // the catch below and Config.axRefreshTimeoutMs)
+            (alive, dead) = try await thread.runInLoop(.cancellable, timeout: unsafe axRefreshTimeout) { [nsApp, windows, axApp] (job) -> ([UInt32], [UInt32]) in
                 var alive: [UInt32: AxWindow] = windows.threadGuarded
                 var dead = [UInt32: AxWindow]()
                 // Second line of defence against lock screen. See the first line of defence: closedWindowsCache

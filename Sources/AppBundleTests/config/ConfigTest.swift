@@ -733,6 +733,36 @@ final class ConfigTest: XCTestCase {
         assertEquals(colemakResult.config.keyMapping, KeyMapping(preset: .colemak, rawKeyNotationToKeyCode: [:]))
         assertEquals(colemakResult.config.keyMapping.resolve()["f"], .e)
     }
+
+    func testParseAxRefreshTimeoutMs() {
+        assertEquals(defaultConfig.axRefreshTimeoutMs, 250)
+        let result = parseConfig(
+            """
+            ax-refresh-timeout-ms = 400
+            """,
+        )
+        assertEquals(result.errors, [])
+        assertEquals(result.config.axRefreshTimeoutMs, 400)
+    }
+
+    /// The enumeration probe gates every reflow, so it must never inherit the patient
+    /// deliberate-operation deadline by accident. Stock mode still disables both
+    func testSyncAxAppTimeout_refreshDeadlineIsIndependentButRespectsStockMode() {
+        defer { syncAxAppTimeout(defaultConfig) } // restore the defaults for the rest of the suite
+
+        syncAxAppTimeout(defaultConfig.copy(\.axAppTimeoutMs, 2000).copy(\.axRefreshTimeoutMs, 250))
+        assertEquals(unsafe axAppTimeout, .milliseconds(2000))
+        assertEquals(unsafe axRefreshTimeout, .milliseconds(250))
+
+        // 0 = "no separate refresh deadline", fall back to the app deadline
+        syncAxAppTimeout(defaultConfig.copy(\.axAppTimeoutMs, 2000).copy(\.axRefreshTimeoutMs, 0))
+        assertEquals(unsafe axRefreshTimeout, .milliseconds(2000))
+
+        // Stock mode disables every deadline, refresh included
+        syncAxAppTimeout(defaultConfig.copy(\.axAppTimeoutMs, 0).copy(\.axRefreshTimeoutMs, 250))
+        assertEquals(unsafe axAppTimeout, nil)
+        assertEquals(unsafe axRefreshTimeout, nil)
+    }
 }
 
 extension ParseConfigResult {
