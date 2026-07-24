@@ -207,11 +207,14 @@ final class MacWindow: Window {
     }
 
     private var axSizeClampObserved: Bool?
+    private var lastClampedAxSize: CGSize?
+    override var knownClampedAxSize: CGSize? { axSizeClampObserved == true ? lastClampedAxSize : nil }
     override func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? {
         if axSizeClampObserved == false { return nil }
         guard let actual = try await macApp.getAxSize(windowId, cm) else { return nil }
         let clamps = abs(actual.width - target.width) > 1 || abs(actual.height - target.height) > 1
         if axSizeClampObserved == nil { axSizeClampObserved = clamps }
+        if clamps { lastClampedAxSize = actual }
         return clamps ? actual : nil
     }
 
