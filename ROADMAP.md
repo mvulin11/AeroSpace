@@ -378,7 +378,7 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       placement (memory TTL) for apps whose background tabs leave the AX list;
       apps whose tabs persist in AX restore exactly via the shelf path.
 
-## Close/minimize reflow latency (user-reported 2026-07-24, LIVE-VALIDATED, not yet deployed)
+## Close/minimize reflow latency (user-reported 2026-07-24, deployed in v0.21.3-fork.11)
 
 - [x] Branch: `perf/reflow-latency` — "closing or minimizing an app takes a couple
       seconds before the rest of the windows adjust".
@@ -425,11 +425,23 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       LEGACY mode and spawned enforce-three-pane.sh mid-measurement. Restore verified: fork.10
       back up, daemon back in fork mode, config byte-identical, all 8 windows on their original
       workspaces.
-      STILL OPEN (deploy-time regression watch, NOT covered by D): an app whose enumeration
-      lands in the 250ms..2000ms band now waits for the next probe (<=1.5s) where it used to
-      succeed inline. D only exercised a healthy TextEdit. If real launches (Xcode, Electron)
-      show late tiling, raise the default to ~400-500ms (dose-response says ~540ms reflow,
-      still ~4x better) rather than reverting.
+      DEPLOYED as v0.21.3-fork.11. Post-deploy re-measurement on the installed daily driver:
+      wedged bystander 297ms (was 2055ms on fork.10, 6.9x), healthy 60ms (was 65ms).
+      Restart self-restored via Phase 6: window map byte-identical, daemon back in fork mode,
+      no Accessibility re-prompt (same bundle id + same self-signed identity).
+      NO config change: `ax-refresh-timeout-ms` is deliberately left out of
+      `~/.aerospace.toml`. The validated value IS the default, and adding the key would create
+      a new lockstep obligation — `sync-mini-aerospace.sh` strips fork-only keys by EXACT line
+      match (`^# FORK: ` / `^enable-count-based-layouts = `) because the mini's stock build
+      rejects unknown keys, so the key would have to be added to that filter in the same
+      commit. Not worth it until there is a reason to tune.
+      STILL OPEN (regression watch, NOT covered by any test run so far): an app whose
+      enumeration lands in the 250ms..2000ms band now waits for the next probe (<=1.5s) where
+      it used to succeed inline. Validation D only exercised a healthy TextEdit; the plausible
+      offenders (Xcode, Electron at launch) were never in that band during testing. If late
+      tiling shows up in daily use, set `ax-refresh-timeout-ms = 400`..`500` (dose-response
+      says ~540ms reflow, still ~4x better than fork.10) rather than reverting — and add the
+      key to the sync-mini filter at the same time.
 
 ## Backlog / watch list
 
@@ -442,12 +454,17 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       tiled one. Watch.
 - [ ] Track upstream releases (currently on Homebrew 0.21.1-Beta; upstream at 0.21.3-Beta)
       and rebase fork branches after each.
+- [ ] `build-docs.sh` is broken on this machine: the Gemfile pins ruby `~> 3.0` and Homebrew
+      now ships 4.0.6 (no ruby@3 formula available), so bundler aborts. Worked around by
+      `build-release.sh --skip-docs` (added 2026-07-24), which skips `.site`/`.man` — consumed
+      only by `script/publish-release.sh`, never by AeroSpace.app. Fix properly (rbenv/mise
+      with a 3.x, or relax the Gemfile pin) before ever publishing a release from here.
 
 ## Deployed state (2026-07-24)
 
-- MacBook: fork v0.21.3-fork.10 live (ALL phases 1-6 + centering v4 + native tabs);
-  fork.8/9/10 hot-swaps all self-restored via Phase 6 (window map + focus
-  identical, zero manual steps);
+- MacBook: fork v0.21.3-fork.11 live (ALL phases 1-6 + centering v4 + native tabs +
+  reflow latency); fork.8/9/10/11 hot-swaps all self-restored via Phase 6 (window map +
+  focus identical, zero manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
