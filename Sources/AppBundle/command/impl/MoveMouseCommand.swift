@@ -38,6 +38,7 @@ struct MoveMouseCommand: Command {
     }
 }
 
+@MainActor
 private func moveMouse(_ io: CmdIo, _ point: CGPoint) -> BinaryExitCode {
     let event = CGEvent(
         mouseEventSource: nil,
@@ -48,6 +49,9 @@ private func moveMouse(_ io: CmdIo, _ point: CGPoint) -> BinaryExitCode {
     switch event {
         case nil: return .fail(io.err("Failed to move mouse"))
         case let event?:
+            // The event we're about to post is indistinguishable from a human mouse move by
+            // the time focus-follows-mouse sees it. Tell FFM to sit this one out.
+            suppressFocusFollowsMouseForWarp()
             event.post(tap: CGEventTapLocation.cghidEventTap)
             return .succ
     }
