@@ -40,6 +40,32 @@ final class BackgroundTabTest: XCTestCase {
         assertEquals(root.children.compactMap { ($0 as? Window)?.windowId }, [1, 2, 3])
     }
 
+    /// Regression: the shelf is the GLOBAL `macosMinimizedWindowsContainer` and the restore pass
+    /// runs it against `focus.workspace`, so a tab that macOS ordered back in while another
+    /// workspace was focused used to be re-tiled *there*. Live, that walked the Ghostty window
+    /// over to whichever workspace you had just switched to
+    func testOrderedOutTabReturnsToItsOwnWorkspaceNotTheFocusedOne() async throws {
+        let home = Workspace.get(byName: name)
+        let elsewhere = Workspace.get(byName: name + "-elsewhere")
+        let root = home.rootTilingContainer
+        TestWindow.new(id: 1, parent: root)
+        let tab = TestWindow.new(id: 2, parent: root)
+
+        orderedOutWindowIdsForTests = [2]
+        try await normalizeLayoutReason()
+        assertEquals(tab.parent === macosMinimizedWindowsContainer, true)
+
+        // Ordered back in while a DIFFERENT workspace holds focus
+        orderedOutWindowIdsForTests = []
+        _ = elsewhere.focusWorkspace()
+        try await normalizeLayoutReason()
+
+        assertEquals(tab.layoutReason, .standard)
+        assertEquals(tab.nodeWorkspace === home, true)
+        assertEquals(elsewhere.rootTilingContainer.children.isEmpty, true)
+        assertEquals(root.children.compactMap { ($0 as? Window)?.windowId }, [1, 2])
+    }
+
     func testNilOrderedOutInfoTouchesNothing() async throws {
         let workspace = Workspace.get(byName: name)
         let window = TestWindow.new(id: 7, parent: workspace.rootTilingContainer)

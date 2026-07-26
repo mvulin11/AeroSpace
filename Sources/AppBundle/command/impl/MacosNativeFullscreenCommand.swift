@@ -37,7 +37,9 @@ struct MacosNativeFullscreenCommand: Command {
             window.bind(to: workspace.macOsNativeFullscreenWindowsContainer, adaptiveWeight: 1, index: INDEX_BIND_LAST)
         } else { // Exit fullscreen
             switch window.layoutReason {
-                case .macos(let prevParentKind):
+                // Exiting fullscreen targets `workspace` (the window's visual workspace), so the
+                // remembered background-tab workspace is irrelevant here
+                case .macos(let prevParentKind, _):
                     do {
                         try await exitMacOsNativeUnconventionalState(
                             window: window,

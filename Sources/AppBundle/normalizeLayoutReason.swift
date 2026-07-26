@@ -56,13 +56,13 @@ private func _normalizeLayoutReason(workspace: Workspace, windows: [Window], ord
                 guard let parent = window.parent else { continue }
                 switch true {
                     case isMacosFullscreen:
-                        window.layoutReason = .macos(prevParentKind: parent.kind)
+                        window.layoutReason = .macos(prevParentKind: parent.kind, restoreToWorkspace: nil)
                         window.bind(to: workspace.macOsNativeFullscreenWindowsContainer, adaptiveWeight: WEIGHT_DOESNT_MATTER, index: INDEX_BIND_LAST)
                     case isMacosMinimized:
-                        window.layoutReason = .macos(prevParentKind: parent.kind)
+                        window.layoutReason = .macos(prevParentKind: parent.kind, restoreToWorkspace: nil)
                         window.bind(to: macosMinimizedWindowsContainer, adaptiveWeight: 1, index: INDEX_BIND_LAST)
                     case isMacosWindowOfHiddenApp:
-                        window.layoutReason = .macos(prevParentKind: parent.kind)
+                        window.layoutReason = .macos(prevParentKind: parent.kind, restoreToWorkspace: nil)
                         window.bind(to: workspace.macOsNativeHiddenAppsWindowsContainer, adaptiveWeight: WEIGHT_DOESNT_MATTER, index: INDEX_BIND_LAST)
                     case isMacosBackgroundTab:
                         // Remember the vacated spot so the group's newly active tab (or this
@@ -70,13 +70,18 @@ private func _normalizeLayoutReason(workspace: Workspace, windows: [Window], ord
                         if let tilingParent = parent as? TilingContainer, let index = window.ownIndex {
                             recordClosedTilingPosition(pid: window.app.pid, parent: tilingParent, index: index, weight: window.getWeight(tilingParent.orientation))
                         }
-                        window.layoutReason = .macos(prevParentKind: parent.kind)
+                        // Unlike a minimize, nothing the user did put this window on the shelf, so
+                        // it has to come back where it left from rather than wherever focus is
+                        window.layoutReason = .macos(prevParentKind: parent.kind, restoreToWorkspace: workspace.name)
                         window.bind(to: macosMinimizedWindowsContainer, adaptiveWeight: 1, index: INDEX_BIND_LAST)
                     default: break
                 }
-            case .macos(let prevParentKind):
+            case .macos(let prevParentKind, let restoreToWorkspace):
                 if !isMacosFullscreen && !isMacosMinimized && !isMacosWindowOfHiddenApp && !isMacosBackgroundTab {
-                    try await exitMacOsNativeUnconventionalState(window: window, prevParentKind: prevParentKind, workspace: workspace, .cancellable)
+                    // A remembered workspace wins over the caller's: the shelf is global, so for a
+                    // background tab `workspace` here is just whatever is focused right now
+                    let target = restoreToWorkspace.map { Workspace.get(byName: $0) } ?? workspace
+                    try await exitMacOsNativeUnconventionalState(window: window, prevParentKind: prevParentKind, workspace: target, .cancellable)
                 }
         }
     }

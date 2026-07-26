@@ -55,7 +55,15 @@ open class Window: TreeNode, Hashable {
 enum LayoutReason: Equatable {
     case standard
     /// Reason for the cur temp layout is macOS native fullscreen, minimize, or hide
-    case macos(prevParentKind: NonLeafTreeNodeKind)
+    ///
+    /// `restoreToWorkspace` is the workspace to put the window back on, and is set only for
+    /// background native tabs. Fullscreen and hidden-app windows are shelved in per-workspace
+    /// containers that already carry that information, and a minimized window is expected to
+    /// come back wherever the user un-minimizes it. A background tab is different: it is shelved
+    /// in the GLOBAL minimized container by nothing the user did, so without remembering the
+    /// workspace it gets restored into whatever happens to be focused when macOS orders it back
+    /// in — which walks the whole tab group over to the workspace you are currently looking at
+    case macos(prevParentKind: NonLeafTreeNodeKind, restoreToWorkspace: String?)
 }
 
 extension Window {
