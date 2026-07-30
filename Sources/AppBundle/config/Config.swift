@@ -29,7 +29,15 @@ var defaultConfigUrl: URL {
     }
     return parsedConfig.config
 }()
-@MainActor var config: Config = defaultConfig // todo move to Ctx?
+// Resident before the user's config loads, and stays resident if their config can't be read
+// at startup (TOML parse error, or an editor's atomic save leaving no file for an instant).
+// Deliberately binding-free: activating the stock bindings for a user who has their own
+// muscle memory silently mutates state — 2026-07-24 the stock alt-comma set a workspace root
+// to accordion, and persist-workspace-assignments then kept the drift alive across restarts
+// for a week. The genuine no-config-at-all path is unaffected: it parses the stock default
+// config and installs it with full bindings via reloadConfig.
+@MainActor let bindingFreeFallbackConfig: Config = defaultConfig.copy(\.modes, [mainModeId: Mode.zero])
+@MainActor var config: Config = bindingFreeFallbackConfig // todo move to Ctx?
 @MainActor var configUrl: URL = defaultConfigUrl
 
 struct Config: ConvenienceMutable {

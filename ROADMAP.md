@@ -539,6 +539,27 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       no window on this machine uses macOS-native tabs anymore. Both must be fixed before
       native tabs are ever un-retired.
 
+## Stock-bindings fallback trap (root cause of the ws1 accordion drift, fixed 2026-07-30)
+
+- [x] Branch: `fix/config-fallback-no-bindings` — two holes let the STOCK default keybindings
+      (alt-comma='layout accordion h v', alt-slash='layout tiles h v', alt-1..9=workspaces)
+      go live on a machine with a custom config, where the terminal alt-key muscle memory
+      (Ghostty macos-option-as-alt + tmux M-1..9) then fires them blind:
+      1. Startup with an unreadable/unparsable custom config: preventConfigReload skips the
+         install, so the RESIDENT initial `config` global — full defaultConfig — stayed active.
+      2. Auto-reload racing an editor's atomic save: findCustomConfigUrl sees no file for an
+         instant -> `.noCustomConfigExists` -> the stock config was installed CLEANLY (no
+         error, no dialog) and the watcher moved on. Fully silent.
+      Evidence: ws1 root flipped to accordion ≥2026-07-24 (debug-build state snapshot),
+      invisible for a week because one-window accordion renders identically to tiles, then
+      surfaced 07-30 as "new windows just stack on top of the tmux Ghostty";
+      persist-workspace-assignments faithfully kept the drift across every restart.
+      Fix: the resident/fatal fallback is now `bindingFreeFallbackConfig` (defaultConfig with
+      zero bindings — tiling and CLI still work, no hotkeys can fire), and readConfig treats
+      "custom config was loaded but the file is gone now" as a keep-current-config fatal
+      instead of installing stock defaults. Genuine new-user path (no custom config at all)
+      still parses and installs the full stock defaults. Regression test in ConfigTest.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
