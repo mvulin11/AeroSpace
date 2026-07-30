@@ -763,6 +763,20 @@ final class ConfigTest: XCTestCase {
         assertEquals(unsafe axAppTimeout, nil)
         assertEquals(unsafe axRefreshTimeout, nil)
     }
+
+    /// The config resident when a custom config can't be read must never carry stock
+    /// keybindings: they fire against a user with different muscle memory and silently
+    /// mutate state (2026-07-24: stock alt-comma set a workspace root to accordion, and
+    /// persist-workspace-assignments kept the drift alive across restarts for a week)
+    func testBindingFreeFallbackConfigHasNoBindings() {
+        assertTrue(bindingFreeFallbackConfig.modes[mainModeId] != nil)
+        for (_, mode) in bindingFreeFallbackConfig.modes {
+            assertTrue(mode.bindings.isEmpty)
+        }
+        // The genuine no-config new-user path must still get the full stock bindings,
+        // and stripping must not leak into defaultConfig itself
+        assertTrue(defaultConfig.modes[mainModeId]?.bindings.isEmpty == false)
+    }
 }
 
 extension ParseConfigResult {

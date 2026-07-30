@@ -12,12 +12,20 @@ struct ReadConfigResult {
         ReadConfigResult(
             configUrl: configUrl,
             parseConfigResult: ParseConfigResult(
-                config: defaultConfig,
+                // Never installed (preventConfigReload below), but keep the inert fallback
+                // binding-free so a future refactor can't resurrect the stock-bindings trap
+                config: bindingFreeFallbackConfig,
                 errors: [.init(.emptyRoot, message, preventConfigReload: true)],
                 warnings: [],
             ),
         )
     }
+}
+
+// The custom config URL the currently active `config` was loaded from, or nil when the
+// active config is the stock default / binding-free fallback
+@MainActor private var activeCustomConfigUrl: URL? {
+    configUrl == defaultConfigUrl ? nil : configUrl
 }
 
 @MainActor
@@ -28,7 +36,24 @@ func readConfig(forceConfigUrl: URL?) -> ReadConfigResult {
     } else {
         switch findCustomConfigUrl() {
             case .file(let url): configUrl = url
-            case .noCustomConfigExists: configUrl = defaultConfigUrl
+            case .noCustomConfigExists:
+                // A custom config was loaded earlier but the file is gone now. That is almost
+                // always an editor's atomic-save rename racing auto-reload-config, not an
+                // intentional removal — and silently activating the stock default bindings
+                // here is how alt-comma once set a workspace root to accordion (2026-07-24).
+                // Keep the already loaded config (preventConfigReload via .fatal); an
+                // intentional removal takes an app restart to get the stock defaults.
+                if let disappeared = activeCustomConfigUrl {
+                    let msg = """
+                        Config file \(disappeared.path.singleQuoted) disappeared \
+                        (likely an editor's atomic save racing auto-reload-config). \
+                        Keeping the previously loaded config instead of the stock defaults. \
+                        Run 'aerospace reload-config' once the file is back, \
+                        or restart AeroSpace if the removal was intentional.
+                        """
+                    return .fatal(configUrl: disappeared, message: msg)
+                }
+                configUrl = defaultConfigUrl
             case .ambiguousConfigError(let candidates):
                 let msg = """
                     Ambiguous config error. Several configs found:
