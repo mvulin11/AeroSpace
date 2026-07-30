@@ -1,4 +1,10 @@
 import AppKit
+import Common
+
+// Test seam for the mid-layout tree-mutation guard in layoutTiles: fires after each
+// child's subtree finishes layout — the suspension point where a concurrent session's
+// rebind lands in production
+@MainActor var layoutTilesPostChildHookForTests: (@MainActor (TreeNode) -> Void)? = nil
 
 extension Workspace {
     @MainActor
@@ -143,7 +149,17 @@ extension TilingContainer {
 
         let lastIndex = children.indices.last
         for (i, child) in children.enumerated() {
-            child.setWeight(orientation, child.getWeight(orientation) + delta)
+            // Sessions are not mutually exclusive, and the layoutRecursive call below suspends
+            // on AX. A concurrent session can mutate the tree during that suspension (shelve a
+            // background native tab, native fullscreen, GC, count-based reshape), after which
+            // the weight accessors die() against this loop's stale snapshot — which is fatal
+            // for the whole server (2026-07-28 crash: getWeight in this loop). Skip what no
+            // longer belongs here instead: the mutating session schedules a follow-up refresh
+            // whose layout pass sees the real tree, so the geometry heals within a pass
+            if layout != .tiles { return }
+            guard child.parent === self else { continue }
+            let childWeight = child.getWeight(orientation) + delta
+            child.setWeight(orientation, childWeight)
             let rawGap = context.resolvedGaps.inner.get(orientation).toDouble()
             // Gaps. Consider 4 cases:
             // 1. Multiple children. Layout first child
@@ -151,20 +167,23 @@ extension TilingContainer {
             // 3. Multiple children. Layout child in the middle
             // 4. Single child   let rawGap = gaps.inner.get(orientation).toDouble()
             let gap = rawGap - (i == 0 ? rawGap / 2 : 0) - (i == lastIndex ? rawGap / 2 : 0)
+            // childWeight rather than child.hWeight/vWeight below: the accessors read the
+            // parent chain, which must not be touched again after the suspension
             try await child.layoutRecursive(
                 i == 0 ? point : point.addingOffset(orientation, rawGap / 2),
-                width: orientation == .h ? child.hWeight - gap : width,
-                height: orientation == .v ? child.vWeight - gap : height,
+                width: orientation == .h ? childWeight - gap : width,
+                height: orientation == .v ? childWeight - gap : height,
                 virtual: Rect(
                     topLeftX: virtualPoint.x,
                     topLeftY: virtualPoint.y,
-                    width: orientation == .h ? child.hWeight : width,
-                    height: orientation == .v ? child.vWeight : height,
+                    width: orientation == .h ? childWeight : width,
+                    height: orientation == .v ? childWeight : height,
                 ),
                 context,
             )
-            virtualPoint = orientation == .h ? virtualPoint.addingXOffset(child.hWeight) : virtualPoint.addingYOffset(child.vWeight)
-            point = orientation == .h ? point.addingXOffset(child.hWeight) : point.addingYOffset(child.vWeight)
+            virtualPoint = virtualPoint.addingOffset(orientation, childWeight)
+            point = point.addingOffset(orientation, childWeight)
+            if isUnitTest { layoutTilesPostChildHookForTests?(child) }
         }
     }
 
