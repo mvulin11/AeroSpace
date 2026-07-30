@@ -562,6 +562,13 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
 
 ## Backlog / watch list
 
+- [ ] Persist-under-load wrinkle (observed 2026-07-30 during the fork.15 deploy): while the
+      release build saturated the CPU, fork.14 persisted a snapshot with Messages+Obsidian
+      on ws1 although the live model had them on ws4/ws3 moments before and after (smells
+      like a #1615-class AX stall briefly mis-binding them to the focused workspace), and no
+      later refresh rewrote the file before the quit — the hot-swap then faithfully restored
+      the bad map. Watch for recurrence; candidate fixes: persist once more on graceful
+      quit, and/or skip persisting while any app is degraded to last-known AX state.
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
       (AXZoomWindow renegotiation) works; a native per-app "renegotiate frame" action is
       possible but lowest priority. Keep the script.
@@ -577,11 +584,15 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       only by `script/publish-release.sh`, never by AeroSpace.app. Fix properly (rbenv/mise
       with a 3.x, or relax the Gemfile pin) before ever publishing a release from here.
 
-## Deployed state (2026-07-24)
+## Deployed state (2026-07-30)
 
-- MacBook: fork v0.21.3-fork.12 live (ALL phases 1-6 + centering v4 + native tabs +
-  reflow latency + vacated-weight share); fork.8/9/10/11/12 hot-swaps all self-restored via Phase 6 (window map +
-  focus identical, zero manual steps);
+- MacBook: fork v0.21.3-fork.15 live (fork.14 + layoutTiles mid-rebind guard + binding-free
+  config fallback + vanished-config reload guard). fork.15 hot-swap self-restored 6/8
+  windows: Messages+Obsidian came back on ws1 because fork.14's LAST persisted snapshot
+  (written mid release-build CPU load) already had them there — persist-under-load wrinkle,
+  see Backlog — two manual `move-node-to-workspace --window-id` calls fixed it; everything
+  else (focus, layouts, daemon) restored clean. Prior history: fork.8-12 hot-swaps all
+  self-restored via Phase 6 (window map + focus identical, zero manual steps);
   `persist-workspace-assignments` on by default — restarts self-restore;
   layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
   window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
