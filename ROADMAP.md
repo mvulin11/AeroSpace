@@ -504,6 +504,41 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       would risk closing real tabs, so it was skipped — its 0.8ms AX time is the relevant number
       and it matches Chrome's.
 
+## Mid-layout tree mutation crash (crashed live 2026-07-28)
+
+- [x] Branch: `fix/layout-mid-rebind-guard` — server fatalError'd at 07:53 with "Weight
+      doesn't make sense for floating windows" (`getWeight` <- `layoutTiles`), killing the
+      whole WM. Artifacts: `/tmp/bobko.aerospace/aerospace-runtime-error.txt` +
+      `DiagnosticReports/Retired/AeroSpace-2026-07-28-075354.ips` (fork.14, refresh event
+      `socketServer: list-monitors --count` — daemon traffic).
+      Root cause: sessions are NOT mutually exclusive — `runLightSession` only
+      cooperatively cancels the one tracked heavy task, and socket sessions never register
+      themselves — so layoutTiles' per-child `await layoutRecursive` suspensions let a
+      concurrent session rebind a child of the loop's snapshot (background-tab shelve,
+      native fullscreen, GC, count-based reshape). On resume the next iteration's
+      getWeight/setWeight sees a foreign parent and die()s, and die() is fatalError.
+      Native-tab shelve/restore churn (every Ghostty tab switch) was the highest-frequency
+      generator of exactly this rebind traffic.
+      Fix: layoutTiles skips children whose parent is no longer self and bails if the
+      container's layout flipped mid-pass; the mutating session already schedules a
+      follow-up refresh whose layout pass sees the real tree, so geometry heals within a
+      pass. The mid-layout child's weight is read ONCE before the suspension and reused
+      (hWeight/vWeight walk the parent chain and would die post-await).
+      2 unit tests (LayoutMidRebindGuardTest) via a new seam
+      (`layoutTilesPostChildHookForTests`) that fires at the suspension point: mid-pass
+      shelve-rebind is skipped not fatal; mid-pass layout flip bails not fatal.
+      415 tests green. Upstream has the same bug class (die-on-invariant + interleavable
+      sessions; cf. the isBound todo re upstream #1215) — candidate for a PR.
+      RELATED, DIAGNOSED SAME DAY BUT NOT FIXED (root of the residual tab-switch focus
+      symptom): `updateFocusCache` advances `lastKnownNativeFocusedWindowId` even when
+      `focusWindow()` returns false because the natively-focused window is a shelved
+      background tab, so model focus goes stale on every tab switch and is never retried;
+      FFM's task can also assert a stale captured window's nativeFocus (re-selecting the
+      old tab). MOOT as of 2026-07-28: Ghostty native tabs retired in favor of tmux
+      inside one window per workspace (`~/.config/ghostty/config` + `~/.tmux.conf`), so
+      no window on this machine uses macOS-native tabs anymore. Both must be fixed before
+      native tabs are ever un-retired.
+
 ## Backlog / watch list
 
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
