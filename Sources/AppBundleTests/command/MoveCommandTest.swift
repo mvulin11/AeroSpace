@@ -58,6 +58,54 @@ final class MoveCommandTest: XCTestCase {
         assertEquals(root.layoutDescription, .h_tiles([.window(2), .window(1)]))
     }
 
+    func testMove_countBasedThreeShape_halfMirrorsInsteadOfDivingIn() async {
+        config.enableCountBasedLayouts = true
+        let root = Workspace.get(byName: name).rootTilingContainer.apply {
+            TilingContainer.newVTiles(parent: $0, adaptiveWeight: 1).apply {
+                TestWindow.new(id: 1, parent: $0)
+                TestWindow.new(id: 2, parent: $0)
+            }
+            assertEquals(TestWindow.new(id: 3, parent: $0).focusWindow(), true)
+        }
+
+        await parseCommand("move left").cmdOrDie.run(.defaultEnv, .emptyStdin)
+        // The half and the stack swap sides; nobody enters the stack
+        assertEquals(root.layoutDescription, .h_tiles([.window(3), .v_tiles([.window(1), .window(2)])]))
+
+        await parseCommand("move right").cmdOrDie.run(.defaultEnv, .emptyStdin)
+        assertEquals(root.layoutDescription, .h_tiles([.v_tiles([.window(1), .window(2)]), .window(3)]))
+    }
+
+    func testMove_countBasedThreeShape_quarterPromotesToHalf() async {
+        config.enableCountBasedLayouts = true
+        let root = Workspace.get(byName: name).rootTilingContainer.apply {
+            TilingContainer.newVTiles(parent: $0, adaptiveWeight: 1).apply {
+                assertEquals(TestWindow.new(id: 1, parent: $0).focusWindow(), true)
+                TestWindow.new(id: 2, parent: $0)
+            }
+            TestWindow.new(id: 3, parent: $0)
+        }
+
+        await parseCommand("move right").cmdOrDie.run(.defaultEnv, .emptyStdin)
+        // The focused quarter takes the half slot; the old half takes the quarter's stack slot
+        assertEquals(root.layoutDescription, .h_tiles([.v_tiles([.window(3), .window(2)]), .window(1)]))
+    }
+
+    func testMove_countBasedThreeShape_offDoesNotIntercept() async {
+        config.enableCountBasedLayouts = false
+        let root = Workspace.get(byName: name).rootTilingContainer.apply {
+            TilingContainer.newVTiles(parent: $0, adaptiveWeight: 1).apply {
+                TestWindow.new(id: 1, parent: $0)
+                TestWindow.new(id: 2, parent: $0)
+            }
+            assertEquals(TestWindow.new(id: 3, parent: $0).focusWindow(), true)
+        }
+
+        await parseCommand("move left").cmdOrDie.run(.defaultEnv, .emptyStdin)
+        // Stock behavior: the half dives into the stack
+        assertEquals(root.layoutDescription, .h_tiles([.v_tiles([.window(1), .window(2), .window(3)])]))
+    }
+
     func testMoveInto_findTopMostContainerWithRightOrientation() async {
         let root = Workspace.get(byName: name).rootTilingContainer.apply {
             TestWindow.new(id: 0, parent: $0)

@@ -1,0 +1,43 @@
+= aerospace-flip-count-layout(1)
+include::util/man-attributes.adoc[]
+:manname: aerospace-flip-count-layout
+// tag::purpose[]
+:manpurpose: Flip the 3-window count-based layout between side-by-side and stacked-on-top
+// end::purpose[]
+
+// =========================================================== Synopsis
+== Synopsis
+[verse]
+// tag::synopsis[]
+aerospace flip-count-layout [-h|--help] [--workspace <workspace>]
+
+// end::synopsis[]
+
+// =========================================================== Description
+== Description
+
+// tag::body[]
+{manpurpose}
+
+Fork-only command; requires `enable-count-based-layouts`.
+
+The 3-window count-based layout is normally pinned side-by-side (a half column plus a
+stack of two quarters). This command toggles the workspace to the transposed variant
+(the half spanning the full width on top, the two quarters side by side below) and
+back. The current half stays the half across the flip.
+
+The transposed variant is temporary by design: it resets when the workspace grows past
+3 tiling windows or when the server restarts.
+
+// =========================================================== Options
+include::./util/conditional-options-header.adoc[]
+
+-h, --help:: Print help
+
+--workspace <workspace>::
+include::./util/workspace-flag-desc.adoc[]
+
+// end::body[]
+
+// =========================================================== Footer
+include::util/man-footer.adoc[]
