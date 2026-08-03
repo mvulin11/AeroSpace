@@ -228,6 +228,14 @@ private let bootTimeToleranceSeconds = 120
 
 @MainActor func persistWorkspaceStateNow() {
     if isUnitTest || !config.persistWorkspaceAssignments { return }
+    // Persist-under-load guard (observed live 2026-07-30, ROADMAP backlog): while any app is
+    // AX-quarantined the model may hold mis-bound windows - degraded enumerations fall back to
+    // last-known ids, and a briefly-stalled app's new windows can bind to the focused workspace.
+    // A snapshot taken now can replace a good file with a wrong map that the next restart
+    // faithfully restores. Skip the write; quarantine backoff is 1.5s, so the next healthy
+    // session persists the truth. Checked here (not at schedule time) so the state after the
+    // 500ms debounce decides, and so the beforeTermination flush is gated by the same rule.
+    if MacApp.allAppsMap.values.contains(where: \.isAxQuarantined) { return }
     guard let bootTime = getBootTime() else { return }
     let world = FrozenWorld(
         workspaces: Workspace.all.map { FrozenWorkspace($0) },
