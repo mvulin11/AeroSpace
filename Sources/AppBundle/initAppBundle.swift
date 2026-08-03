@@ -8,10 +8,13 @@ import Foundation
         unsafe _isCli = false
         initServerArgs()
         await waitForAccessibilityPermission_nonCancellable()
+        // SIGTERM (pkill, process managers) flushes persisted workspace state and, on debug
+        // builds, re-enables the release server - previously only SIGINT did, and the
+        // SIGKILL interception it shipped with was a no-op (SIGKILL is uncatchable by POSIX)
+        interceptTermination(SIGTERM)
         if isDebug {
             await toggleReleaseServerIfDebug(.off)
             interceptTermination(SIGINT)
-            interceptTermination(SIGKILL)
         }
 
         await bootstrapConfig_nonCancellable()
