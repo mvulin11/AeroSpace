@@ -27,7 +27,7 @@ final class MacWindow: Window {
                 : focus.workspace,
             window: nil,
             .cancellable,
-        )
+        ).orDie("nil is only possible when a window is passed")
 
         // atomic synchronous section
         if let existing = allWindowsMap[windowId] { return existing }
@@ -280,18 +280,32 @@ final class MacWindow: Window {
 extension Window {
     @MainActor
     func relayoutWindow(on workspace: Workspace, _ cm: CancellationMode, forceTile: Bool = false) async throws {
-        let data = forceTile
-            ? unbindAndGetBindingDataForNewTilingWindow(workspace, window: self, pid: app.pid)
-            : try await unbindAndGetBindingDataForNewWindow(self.asMacWindow().windowId, self.asMacWindow().macApp, workspace, window: self, cm)
+        let data: BindingData
+        if forceTile {
+            data = unbindAndGetBindingDataForNewTilingWindow(workspace, window: self, pid: app.pid)
+        } else {
+            // nil means the window was unbound (garbage collected) while the AX call inside
+            // was suspended - the relayout is moot, and binding would resurrect a dead window
+            guard let liveData = try await unbindAndGetBindingDataForNewWindow(self.asMacWindow().windowId, self.asMacWindow().macApp, workspace, window: self, cm) else { return }
+            data = liveData
+        }
         bind(to: data.parent, adaptiveWeight: data.adaptiveWeight, index: data.index)
     }
 }
 
-// The function is private because it's unsafe. It leaves the window in unbound state
+// The function is private because it's unsafe. It leaves the window in unbound state.
+// Returns nil iff `window` was passed and got unbound during the AX suspension.
 @MainActor
-private func unbindAndGetBindingDataForNewWindow(_ windowId: UInt32, _ macApp: MacApp, _ workspace: Workspace, window: Window?, _ cm: CancellationMode) async throws -> BindingData {
+private func unbindAndGetBindingDataForNewWindow(_ windowId: UInt32, _ macApp: MacApp, _ workspace: Workspace, window: Window?, _ cm: CancellationMode) async throws -> BindingData? {
     let windowLevel = getWindowLevel(for: windowId)
-    return switch try await macApp.getAxUiElementWindowType(windowId, windowLevel, cm) {
+    let windowType = try await macApp.getAxUiElementWindowType(windowId, windowLevel, cm)
+    // Sessions are not mutually exclusive, and the AX call above suspends. A concurrent
+    // session can garbage-collect `window` during that suspension (same crash class as the
+    // 2026-07-28 layoutTiles incident): unbindFromParent() in the .window branch would then
+    // die() fatally, and the popup/dialog branches would bind a dead window back into the
+    // tree. Bail instead - the mutating session schedules its own follow-up refresh
+    if let window, window.parent == nil { return nil }
+    return switch windowType {
         case .popup: BindingData(parent: macosPopupWindowsContainer, adaptiveWeight: WEIGHT_AUTO, index: INDEX_BIND_LAST)
         case .dialog: BindingData(parent: workspace.floatingWindowsContainer, adaptiveWeight: WEIGHT_AUTO, index: INDEX_BIND_LAST)
         case .window: unbindAndGetBindingDataForNewTilingWindow(workspace, window: window, pid: macApp.pid)
