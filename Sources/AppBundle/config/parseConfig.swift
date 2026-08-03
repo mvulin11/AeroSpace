@@ -164,7 +164,6 @@ private let configParser: [String: any ParserProtocol<Config>] = [
     "enable-normalization-flatten-containers": Parser(\.enableNormalizationFlattenContainers, parseBool),
     "enable-normalization-opposite-orientation-for-nested-containers": Parser(\.enableNormalizationOppositeOrientationForNestedContainers, parseBool),
     "enable-count-based-layouts": Parser(\.enableCountBasedLayouts, parseBool),
-    "center-non-resizable-windows": Parser(\.centerNonResizableWindows, parseBool),
     "persist-workspace-assignments": Parser(\.persistWorkspaceAssignments, parseBool),
     "ax-app-timeout-ms": Parser(\.axAppTimeoutMs, parseInt),
     "ax-refresh-timeout-ms": Parser(\.axRefreshTimeoutMs, parseInt),

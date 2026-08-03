@@ -58,13 +58,9 @@ extension TreeNode {
                                 y: point.y + max(0, (height - clampedSize.height) / 2),
                             )
                         }
-                        let requestedPoint = config.centerNonResizableWindows
-                            ? window.knownClampedAxSize.map(centered) ?? point
-                            : point
+                        let requestedPoint = window.knownClampedAxSize.map(centered) ?? point
                         window.setAxFrame(requestedPoint, target)
-                        if config.centerNonResizableWindows,
-                           let actualSize = try await window.getAxSizeIfClamping(target: target, .cancellable)
-                        {
+                        if let actualSize = try await window.getAxSizeIfClamping(target: target, .cancellable) {
                             let newPoint = centered(actualSize)
                             // Re-position only when the observed size moved the centering target;
                             // re-setting an identical frame every pass is pointless AX churn

@@ -56,8 +56,6 @@ struct Config: ConvenienceMutable {
     var enableNormalizationOppositeOrientationForNestedContainers: Bool = true
     // Fork feature: deterministic count-based layouts (2=side-by-side, 3=primary+stack, 4=2x2)
     var enableCountBasedLayouts: Bool = false
-    // Fork feature: center non-resizable windows (System Settings, Calculator, ...) in their tile
-    var centerNonResizableWindows: Bool = true
     // Fork feature: restore windowId -> workspace assignments after a server restart (state file survives WM restarts, not reboots)
     var persistWorkspaceAssignments: Bool = true
     // Fork feature (#1615): deadline for AX requests to one app before the session degrades
@@ -72,9 +70,14 @@ struct Config: ConvenienceMutable {
     // probe — so this deadline buys latency at almost no correctness cost. Deliberate AX work
     // (setFrame, focus, close) keeps the patient axAppTimeoutMs. 0 = reuse axAppTimeoutMs
     var axRefreshTimeoutMs: Int = 250
-    // Fork feature: shelve background macOS-native tab windows (Ghostty, Finder, ...) out of
-    // the tiling tree so creating/switching tabs doesn't reshape the workspace
-    var excludeBackgroundTabs: Bool = true
+    // Fork feature: shelve background macOS-native tab windows out of the tiling tree so
+    // creating/switching tabs doesn't reshape the workspace. Default OFF since 2026-08-03:
+    // native tabs were retired on every machine (tmux inside one Ghostty window per
+    // workspace), the per-pass CGWindowList sweep costs every refresh, and an ordered-out
+    // misread is the one remaining path that can shelve a real window by inference. Two
+    // known focus bugs (stale updateFocusCache, FFM asserting a stale captured window) must
+    // be fixed before this is ever turned back on - see ROADMAP "macOS-native tabs"
+    var excludeBackgroundTabs: Bool = false
     var persistentWorkspaces: OrderedSet<String> = []
     var execOnWorkspaceChange: [String] = [] // todo deprecate
     var keyMapping = KeyMapping()
