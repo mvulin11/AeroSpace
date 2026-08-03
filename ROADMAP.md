@@ -560,15 +560,61 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       instead of installing stock defaults. Genuine new-user path (no custom config at all)
       still parses and installs the full stock defaults. Regression test in ConfigTest.
 
+## Review sweep (2026-08-03, fork.16) — full-fork review, bug fixes, script-layer retirement
+
+Independent code review of the whole fork diff + config ecosystem. Outcomes:
+
+- [x] Branch `fix/relayout-unbind-guard` — latent whole-WM crash, same class as the
+      2026-07-28 layoutTiles incident: `unbindAndGetBindingDataForNewWindow` awaits
+      getAxUiElementWindowType, and a concurrent session GC'ing the window during that
+      suspension made the .window branch die() in unbindFromParent() (and the
+      popup/dialog branches would bind the dead window back into the tree). Post-await
+      unbound state now returns nil and relayoutWindow bails; the mutating session's
+      follow-up refresh heals. No test seam (the function requires a live MacApp for
+      the AX call); covered by the full suite only — NOT live-reproduced.
+- [x] Branch `fix/sigterm-intercept` — `interceptTermination(SIGKILL)` was a no-op
+      (SIGKILL is uncatchable); the Phase 0 gotcha was never actually addressed.
+      SIGTERM is now intercepted on BOTH build flavors: flushes the persist snapshot,
+      re-enables the release server when debug.
+- [x] Branch `fix/persist-degraded-gate` — persist-under-load wrinkle (was in Backlog,
+      observed live 2026-07-30) FIXED: persistWorkspaceStateNow skips the write while
+      any app is AX-quarantined, so a degraded session can never overwrite a healthy
+      snapshot; checked at write time so the debounced state decides and the
+      beforeTermination flush obeys the same rule.
+- [x] Branch `chore/retire-tab-shelving-default` — `exclude-background-tabs` now
+      defaults OFF (native tabs retired 2026-07-28 on every machine; the CGWindowList
+      sweep per pass and the ordered-out-misread shelving risk bought nothing). The
+      machinery stays in-tree until the next upstream rebase, then delete
+      (~120 lines: detectOrderedOutWindowIds, isMacosBackgroundTab, restoreToWorkspace
+      threading, shelve-path recordClosedTilingPosition). closedTilingPositionMemory
+      STAYS - it is close/reopen position inheritance, not tab machinery.
+      Also: `center-non-resizable-windows` knob removed (behavior hardcoded on; the
+      knob was never set nor toggled since v4 stabilized).
+- [x] SCRIPT LAYER RETIRED (config repo commit 2ec1ec0): enforce-three-pane.sh,
+      prune-ghost-windows.sh, and layout-daemon.sh deleted on every machine - the fork
+      does all of it natively and the live tree showed zero ghosts since fork.8.
+      ~/.aerospace.toml: after-startup-command emptied, cmd-alt-g / cmd-ctrl-shift-r /
+      duplicate cmd-alt-shift-r dropped. sync-mini-aerospace.sh rewritten in the same
+      commit: ships only focus-windows-app.sh + vm-fullscreen.sh, cleans retired
+      scripts off the mini, refuses to push to a non-fork remote build.
+- [x] Hyprland-parity config: workspace keys got `--auto-back-and-forth` (pressing the
+      current workspace's key bounces back) and a new `cmd-ctrl-s` resize mode
+      (arrows/hjkl repeat, b = balance, esc/enter exit).
+- Review findings NOT acted on (deliberate): endAxQuarantine() is unreachable dead
+  code (quarantine only ever ends by TTL; left as-is to avoid touching fork.11's
+  validated latency path), and count-based reshape vs. incremental persisted-restore
+  can flicker transiently during multi-window restarts (converges; watch).
+- Upstreaming shortlist (not attempted this round): window-frame format tokens, FFM
+  warp suppression, dead-PID GC (needs the window-closed broadcast stripped),
+  mid-rebind guard. #2199 (window-closed) was REJECTED upstream, so that event is a
+  permanent fork feature - note it currently has zero subscribers (daemon retired);
+  it stays for SketchyBar / empty-workspace routing later.
+
 ## Backlog / watch list
 
-- [ ] Persist-under-load wrinkle (observed 2026-07-30 during the fork.15 deploy): while the
-      release build saturated the CPU, fork.14 persisted a snapshot with Messages+Obsidian
-      on ws1 although the live model had them on ws4/ws3 moments before and after (smells
-      like a #1615-class AX stall briefly mis-binding them to the focused workspace), and no
-      later refresh rewrote the file before the quit — the hot-swap then faithfully restored
-      the bad map. Watch for recurrence; candidate fixes: persist once more on graceful
-      quit, and/or skip persisting while any app is degraded to last-known AX state.
+- [x] Persist-under-load wrinkle (observed 2026-07-30 during the fork.15 deploy) —
+      FIXED 2026-08-03 in fork.16 by `fix/persist-degraded-gate`, see the review sweep
+      section above.
 - [ ] Windows App (`com.microsoft.rdc.macos`) aspect-ratio clamp: `nudge-vm-width.sh`
       (AXZoomWindow renegotiation) works; a native per-app "renegotiate frame" action is
       possible but lowest priority. Keep the script.
@@ -584,37 +630,28 @@ apps run, so this covers WM restarts/crashes (not machine reboots).
       only by `script/publish-release.sh`, never by AeroSpace.app. Fix properly (rbenv/mise
       with a 3.x, or relax the Gemfile pin) before ever publishing a release from here.
 
-## Deployed state (2026-07-30)
+## Deployed state (2026-08-03)
 
-- MacBook: fork v0.21.3-fork.15 live (fork.14 + layoutTiles mid-rebind guard + binding-free
-  config fallback + vanished-config reload guard). fork.15 hot-swap self-restored 6/8
-  windows: Messages+Obsidian came back on ws1 because fork.14's LAST persisted snapshot
-  (written mid release-build CPU load) already had them there — persist-under-load wrinkle,
-  see Backlog — two manual `move-node-to-workspace --window-id` calls fixed it; everything
-  else (focus, layouts, daemon) restored clean. Prior history: fork.8-12 hot-swaps all
-  self-restored via Phase 6 (window map + focus identical, zero manual steps);
-  `persist-workspace-assignments` on by default — restarts self-restore;
-  layout-daemon in FORK MODE (subscribes focused-workspace-changed + window-detected +
-  window-closed; no focus-changed, no enforce-three-pane.sh, no auto-rebalance —
-  manual resizes now survive; cmd-ctrl-b re-evens on demand).
-- Mac mini: stock Homebrew 0.21.1-Beta; synced daemon auto-detected legacy mode
-  (verified: subscribes focus-changed + enforce flow). Mini config generated with
-  fork-only lines stripped.
-- enforce-three-pane.sh: no longer invoked by the MacBook daemon but MUST stay in the
-  repo — the mini still uses it and the sync scp's it by name; cmd-ctrl-shift-r also
-  still points at it (harmless double-enforce on the fork).
-- prune-ghost-windows.sh: still active on both machines until Phase 3.
+- MacBook: fork v0.21.3-fork.16 live (fork.15 + relayout unbind guard + SIGTERM
+  interception + persist degraded-session gate + exclude-background-tabs default off +
+  center-non-resizable knob hardcoded). No daemon, no scripts: the config's
+  after-startup-command is empty and layout enforcement is entirely server-side.
+  `persist-workspace-assignments` on by default — restarts self-restore.
+- Mac mini: fork v0.21.3-fork.16 (was fork.14 — the 2026-07-30 "stock Homebrew" note
+  in the previous version of this section was STALE and hid the script-retirement
+  opportunity; the mini has run the fork since 2026-07-26). Config generated by
+  sync-mini-aerospace.sh; only focus-windows-app.sh + vm-fullscreen.sh remain there.
 
-## Lockstep warnings (do NOT skip when deleting scripts)
+## Lockstep warnings
 
-1. `sync-mini-aerospace.sh` anchors on **exact line text** in `~/.aerospace.toml`
-   (the `com.microsoft.rdc.macos` block) and scp's scripts **by exact filename**
-   (`enforce-three-pane.sh`). Retiring or renaming anything requires updating the Mac
-   mini sync in the same change — it fails silently otherwise.
-2. `~/.aerospace.toml` `after-startup-command` starts the daemon and force-prunes ghosts;
-   both lines go away only when Phases 1–3 are all deployed.
-3. The Mac mini presumably runs the Homebrew build — it needs the fork deployed too
-   before its config can drop the scripts, or the sync must maintain two variants.
+1. `sync-mini-aerospace.sh` still anchors on **exact line text** in `~/.aerospace.toml`
+   (the `com.microsoft.rdc.macos` block + several binding lines, e.g. `cmd-alt-r`,
+   `cmd-ctrl-p`, `cmd-shift-semicolon`, and the `# Mini-only on-window-detected rules`
+   trailer). Renaming or deleting any anchored line requires updating the sync's awk
+   rules in the same change — it fails silently otherwise.
+2. Keep the '-fork' build-version suffix: sync-mini-aerospace.sh refuses to push config
+   to a remote whose `aerospace --version` lacks it (fork-only config keys would break
+   a stock build's config load).
 
 ## Deploy checklist (per validated fix)
 
