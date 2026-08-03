@@ -1,13 +1,13 @@
 import AppKit
 import Common
 
-// When a native-tab app (Ghostty, Finder, ...) creates or switches tabs, the previously
-// active tab's AXWindow leaves the AX list (and gets GC'd) while the newly active tab
-// arrives as a "new" window moments later. Without memory the replacement binds via the
-// MRU heuristic, so the tab group's tile hops around and the workspace re-sorts.
-// Remember recently vacated tiling positions per app for a short window and let the
-// replacement window reclaim the exact spot (parent, index, and weight — so the tile
-// keeps its size too).
+// Close/reopen position inheritance: MacWindow.garbageCollect records the vacated tiling
+// position of EVERY closed tiling window, and the next new window of the same app on that
+// workspace (cmd+W -> new window, an app replacing one of its own windows) reclaims the
+// exact spot - parent, index, and size - instead of binding via the MRU heuristic.
+// Originally built for macOS-native tab churn (tabs retired 2026-07-28; the shelve-path
+// producer is gone with excludeBackgroundTabs defaulting off), but the close/reopen
+// behavior is why this stays.
 
 struct ClosedTilingPosition {
     let pid: pid_t
