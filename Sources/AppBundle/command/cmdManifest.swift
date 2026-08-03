@@ -28,6 +28,8 @@ extension CmdArgs {
                 return .failure("exec-and-forget is not a real command and it's NOT allowed in the shell", EXIT_CODE_TWO)
             case .flattenWorkspaceTree:
                 command = FlattenWorkspaceTreeCommand(args: self as! FlattenWorkspaceTreeCmdArgs)
+            case .flipCountLayout:
+                command = FlipCountLayoutCommand(args: self as! FlipCountLayoutCmdArgs)
             case .focus:
                 command = FocusCommand(args: self as! FocusCmdArgs)
             case .focusBackAndForth:

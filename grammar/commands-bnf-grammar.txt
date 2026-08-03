@@ -32,6 +32,7 @@ aerospace -h;
     | false
 
     | flatten-workspace-tree [--workspace <workspace>]
+    | flip-count-layout [--workspace <workspace>]
 
     | focus [<focus_direction_flag>]... (left|down|up|right) [<focus_direction_flag>]...
     | focus --window-id <window_id>

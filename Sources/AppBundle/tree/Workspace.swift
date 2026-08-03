@@ -35,6 +35,11 @@ final class Workspace: TreeNode, NonLeafTreeNodeObject, Hashable, Comparable {
     nonisolated private let nameLogicalSegments: StringLogicalSegments
     /// `assignedMonitorPoint` must be interpreted only when the workspace is invisible
     fileprivate var assignedMonitorPoint: CGPoint? = nil
+    /// Fork: the 3-window count-based layout is pinned side-by-side; `flip-count-layout`
+    /// toggles this to get the stacked-on-top variant. Deliberately NOT persisted (a server
+    /// restart resets to side-by-side) and cleared whenever the workspace grows past 3
+    /// tiling windows - the vertical shape must never appear unless explicitly requested
+    @MainActor var countLayoutVertical: Bool = false
 
     @MainActor
     private init(_ name: String) {

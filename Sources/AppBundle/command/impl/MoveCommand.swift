@@ -26,6 +26,15 @@ struct MoveCommand: Command {
                 if parent.orientation == direction.orientation && parent.children.indices.contains(indexOfSiblingTarget) {
                     switch parent.children[indexOfSiblingTarget].tilingTreeNodeCasesOrDie() {
                         case .tilingContainer(let topLevelSiblingTargetContainer):
+                            // Fork: in the count-based 3-shape, the half moving toward the stack
+                            // MIRRORS the layout (half and stack swap sides) instead of the half
+                            // diving into the stack (which would trigger a full reshape and
+                            // scramble who the half is)
+                            if config.enableCountBasedLayouts, parent.isRootContainer, matchesCountBasedShape(root: parent, count: 3) {
+                                let prevBinding = currentWindow.unbindFromParent()
+                                currentWindow.bind(to: parent, adaptiveWeight: prevBinding.adaptiveWeight, index: indexOfSiblingTarget)
+                                return .succ
+                            }
                             return deepMoveIn(window: currentWindow, into: topLevelSiblingTargetContainer, moveDirection: direction, io)
                         case .window: // "swap windows"
                             let prevBinding = currentWindow.unbindFromParent()
@@ -33,6 +42,27 @@ struct MoveCommand: Command {
                             return .succ
                     }
                 } else {
+                    // Fork: in the count-based 3-shape, a stacked quarter moving toward the half
+                    // is PROMOTED: it takes the half's slot (and size) and the half takes the
+                    // quarter's place in the stack, instead of the quarter popping out to a
+                    // third column and the reshape picking an arbitrary new half
+                    if config.enableCountBasedLayouts,
+                       let stack = currentWindow.parent as? TilingContainer,
+                       let root = stack.parent as? TilingContainer,
+                       root.isRootContainer,
+                       root.orientation == direction.orientation,
+                       matchesCountBasedShape(root: root, count: 3),
+                       let stackIndex = stack.ownIndex
+                    {
+                        let halfIndex = stackIndex + direction.focusOffset
+                        if root.children.indices.contains(halfIndex), let half = root.children[halfIndex] as? Window {
+                            let halfBinding = half.unbindFromParent()
+                            let quarterBinding = currentWindow.unbindFromParent()
+                            currentWindow.bind(to: root, adaptiveWeight: halfBinding.adaptiveWeight, index: halfIndex)
+                            half.bind(to: stack, adaptiveWeight: quarterBinding.adaptiveWeight, index: quarterBinding.index)
+                            return .succ
+                        }
+                    }
                     return moveOut(tilingWindow: currentWindow, direction: direction, io, args, env)
                 }
             case .floatingWindowsContainer: // floating window

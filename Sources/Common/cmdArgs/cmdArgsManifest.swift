@@ -14,6 +14,7 @@ public enum CmdKind: String, CaseIterable, Equatable, Sendable {
     case _false = "false"
 
     case flattenWorkspaceTree = "flatten-workspace-tree"
+    case flipCountLayout = "flip-count-layout" // fork
     case focus
     case focusBackAndForth = "focus-back-and-forth"
     case focusMonitor = "focus-monitor"
@@ -78,6 +79,8 @@ func initSubcommands() -> [String: any SubCommandParserProtocol] {
                 result[kind.rawValue] = SubCommandParser(FalseCmdArgs.init)
             case .flattenWorkspaceTree:
                 result[kind.rawValue] = SubCommandParser(FlattenWorkspaceTreeCmdArgs.init)
+            case .flipCountLayout:
+                result[kind.rawValue] = SubCommandParser(FlipCountLayoutCmdArgs.init)
             case .focus:
                 result[kind.rawValue] = SubCommandParser(parseFocusCmdArgs)
             case .focusBackAndForth:

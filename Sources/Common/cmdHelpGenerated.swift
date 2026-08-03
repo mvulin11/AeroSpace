@@ -39,6 +39,9 @@ let false_help_generated = """
 let flatten_workspace_tree_help_generated = """
     USAGE: flatten-workspace-tree [-h|--help] [--workspace <workspace>]
     """
+let flip_count_layout_help_generated = """
+    USAGE: flip-count-layout [-h|--help] [--workspace <workspace>]
+    """
 let focus_back_and_forth_help_generated = """
     USAGE: focus-back-and-forth [-h|--help]
     """
