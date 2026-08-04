@@ -224,33 +224,41 @@ final class MacWindow: Window {
     private enum AxSizeClampClassification {
         case unknown(lastMismatch: CGSize?, streak: Int)
         case conforming
-        case clamping(CGSize)
+        // target = the tile size the clamp was confirmed against. A different tile must
+        // re-probe: aspect-fitting windows (iOS Simulator) can scale up to a bigger tile
+        case clamping(CGSize, target: CGSize)
     }
     private static let CLAMP_CONFIRMATIONS = 3
     private var clampClassification: AxSizeClampClassification = .unknown(lastMismatch: nil, streak: 0)
 
-    override var knownClampedAxSize: CGSize? {
-        if case .clamping(let size) = clampClassification { return size }
+    private static func sameSize(_ a: CGSize, _ b: CGSize) -> Bool {
+        abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
+    }
+
+    override func knownClampedAxSize(forTarget target: CGSize) -> CGSize? {
+        if case .clamping(let size, let cachedTarget) = clampClassification, MacWindow.sameSize(target, cachedTarget) {
+            return size
+        }
         return nil
     }
 
     override func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? {
         if case .conforming = clampClassification { return nil }
         guard let actual = try await macApp.getAxSize(windowId, cm) else { return nil }
-        func sameSize(_ a: CGSize, _ b: CGSize) -> Bool {
-            abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
-        }
-        let matchesTarget = sameSize(actual, target)
+        let matchesTarget = MacWindow.sameSize(actual, target)
         switch clampClassification {
             case .conforming:
                 return nil
-            case .clamping(let cached):
+            case .clamping(_, let cachedTarget):
                 if matchesTarget {
                     clampClassification = .unknown(lastMismatch: nil, streak: 0)
                     return nil
                 }
-                if !sameSize(actual, cached) {
-                    clampClassification = .clamping(actual) // fixed size changed (e.g. Settings pane switch)
+                if !MacWindow.sameSize(target, cachedTarget) {
+                    // Tile changed since the clamp was confirmed - re-learn from scratch
+                    // against the new target instead of trusting a single readback
+                    clampClassification = .unknown(lastMismatch: actual, streak: 1)
+                    return nil
                 }
                 return actual
             case .unknown(let lastMismatch, let streak):
@@ -258,14 +266,30 @@ final class MacWindow: Window {
                     clampClassification = .conforming
                     return nil
                 }
-                let newStreak = lastMismatch.map { sameSize($0, actual) } == true ? streak + 1 : 1
+                let newStreak = lastMismatch.map { MacWindow.sameSize($0, actual) } == true ? streak + 1 : 1
                 if newStreak >= MacWindow.CLAMP_CONFIRMATIONS {
-                    clampClassification = .clamping(actual)
+                    clampClassification = .clamping(actual, target: target)
                     return actual
                 }
                 clampClassification = .unknown(lastMismatch: actual, streak: newStreak)
                 return nil
         }
+    }
+
+    override func observeClampedAxSizeDrift(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? {
+        guard case .clamping(let cached, let cachedTarget) = clampClassification else { return nil }
+        guard let actual = try await macApp.getAxSize(windowId, cm) else { return nil }
+        if MacWindow.sameSize(actual, cached) { return nil }
+        if MacWindow.sameSize(actual, target) {
+            // The window now fills its tile on its own - it no longer clamps
+            clampClassification = .unknown(lastMismatch: nil, streak: 0)
+            return nil
+        }
+        // The window changed its own fixed size (device rotation, Settings pane switch).
+        // Single-observation update is safe here: unlike the post-setAxFrame readback,
+        // nothing was requested of the window, so there is no async-resize race to catch
+        clampClassification = .clamping(actual, target: cachedTarget)
+        return actual
     }
 
     override func setAxFrame(_ topLeft: CGPoint?, _ size: CGSize?) {
