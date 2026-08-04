@@ -58,14 +58,27 @@ extension TreeNode {
                                 y: point.y + max(0, (height - clampedSize.height) / 2),
                             )
                         }
-                        let requestedPoint = window.knownClampedAxSize.map(centered) ?? point
-                        window.setAxFrame(requestedPoint, target)
-                        if let actualSize = try await window.getAxSizeIfClamping(target: target, .cancellable) {
-                            let newPoint = centered(actualSize)
-                            // Re-position only when the observed size moved the centering target;
-                            // re-setting an identical frame every pass is pointless AX churn
-                            if abs(newPoint.x - requestedPoint.x) > 1 || abs(newPoint.y - requestedPoint.y) > 1 {
-                                window.setAxFrame(newPoint, nil)
+                        if let clamped = window.knownClampedAxSize(forTarget: target) {
+                            // Steady state for a confirmed-clamping window: POSITION ONLY.
+                            // Re-requesting the tile size every pass makes aspect-fitting apps
+                            // (iOS Simulator) visibly re-fit on every layout pass, and their
+                            // shifting readbacks then churned the clamp cache and re-centered
+                            // the window in a feedback loop ("freaks out trying to center").
+                            // Size changes the window makes on its own (device rotation,
+                            // Settings pane switch) are picked up by a read-only drift probe
+                            window.setAxFrame(centered(clamped), nil)
+                            if let driftedSize = try await window.observeClampedAxSizeDrift(target: target, .cancellable) {
+                                window.setAxFrame(centered(driftedSize), nil)
+                            }
+                        } else {
+                            window.setAxFrame(point, target)
+                            if let actualSize = try await window.getAxSizeIfClamping(target: target, .cancellable) {
+                                let newPoint = centered(actualSize)
+                                // Re-position only when the observed size moved the centering target;
+                                // re-setting an identical frame every pass is pointless AX churn
+                                if abs(newPoint.x - point.x) > 1 || abs(newPoint.y - point.y) > 1 {
+                                    window.setAxFrame(newPoint, nil)
+                                }
                             }
                         }
                     }

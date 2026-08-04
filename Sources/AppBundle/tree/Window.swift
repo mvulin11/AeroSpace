@@ -37,10 +37,18 @@ open class Window: TreeNode, Hashable {
     // conforms to the requested size. Implementations cache the classification after the
     // first observation, so conforming windows pay for one readback in their lifetime
     func getAxSizeIfClamping(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? { nil }
-    // Last observed clamped size of a known-clamping window, nil for conforming/unknown.
-    // Lets the layout place clamping windows at their centered position directly instead
-    // of positioning at the tile's top-left first and re-centering after the readback
-    var knownClampedAxSize: CGSize? { nil }
+    // Confirmed clamped size of a known-clamping window FOR THIS TILE TARGET, nil for
+    // conforming/unknown or when the tile target changed since the clamp was confirmed
+    // (a bigger tile must re-probe: aspect-fitting windows can scale up to fill it).
+    // Lets the layout place clamping windows at their centered position directly, and
+    // with position-only frames - see observeClampedAxSizeDrift
+    func knownClampedAxSize(forTarget target: CGSize) -> CGSize? { nil }
+    // Steady-state observation for a confirmed-clamping window: READ the current size
+    // and return it iff it drifted from the cached clamp (device rotation, System
+    // Settings pane switch), so the layout can re-center. A read, never a size write:
+    // re-requesting the tile size every pass makes aspect-fitting apps (iOS Simulator)
+    // visibly re-fit on every layout pass
+    func observeClampedAxSizeDrift(target: CGSize, _ cm: CancellationMode) async throws -> CGSize? { nil }
     func getTitle(_ cm: CancellationMode) async throws -> String { die("Not implemented") }
     func isMacosFullscreen(_ cm: CancellationMode) async throws -> Bool { false }
     func isMacosMinimized(_ cm: CancellationMode) async throws -> Bool { false } // todo replace with enum MacOsWindowNativeState { normal, fullscreen, invisible }
